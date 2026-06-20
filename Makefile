@@ -1,4 +1,5 @@
 MODEL ?= llama3.2:3b
+EMBED_MODEL ?= nomic-embed-text
 PORT ?= 8000
 PROMPT ?= Hello!
 
@@ -10,7 +11,7 @@ help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
-setup: ## Install deps, git hooks, .env, and pull the Ollama model (MODEL=llama3.2:3b)
+setup: ## Install deps, git hooks, .env, and pull the Ollama models (MODEL=llama3.2:3b EMBED_MODEL=nomic-embed-text)
 	uv sync
 	uv run pre-commit install
 	test -f .env || cp .env.example .env
@@ -22,6 +23,7 @@ setup: ## Install deps, git hooks, .env, and pull the Ollama model (MODEL=llama3
 		exit 1; \
 	fi
 	ollama pull $(MODEL)
+	ollama pull $(EMBED_MODEL)
 
 install-ollama: ## Install Ollama (macOS via Homebrew, Linux via official script)
 	@if command -v ollama > /dev/null 2>&1; then \

@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     request_timeout: float = 60.0
     default_temperature: float = 0.7
 
+    # RAG
+    embed_model: str = "nomic-embed-text"
+    vector_store_dir: str = ".chroma"
+    rag_top_k: int = 4
+    chunk_size: int = 200
+    chunk_overlap: int = 40
+
 
 @lru_cache
 def get_settings() -> Settings:
