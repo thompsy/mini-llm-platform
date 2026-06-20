@@ -35,7 +35,7 @@ uv run pre-commit install
 ### Run
 
 ```bash
-uv run python main.py
+uv run python -m app.main
 ```
 
 ### Development
