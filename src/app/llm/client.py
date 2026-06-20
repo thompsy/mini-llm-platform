@@ -1,0 +1,59 @@
+from dataclasses import dataclass
+
+import httpx
+
+from app.models import ChatMessage
+
+
+class OllamaError(Exception):
+    """Raised when the Ollama backend cannot fulfil a request."""
+
+
+@dataclass(frozen=True, slots=True)
+class ChatResult:
+    content: str
+    model: str
+    output_tokens: int | None
+
+
+class OllamaClient:
+    """Thin async client for Ollama's /api/chat endpoint (non-streaming)."""
+
+    def __init__(self, base_url: str, timeout: float) -> None:
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+
+    async def chat(
+        self,
+        *,
+        messages: list[ChatMessage],
+        model: str,
+        temperature: float,
+    ) -> ChatResult:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": m.role.value, "content": m.content} for m in messages
+            ],
+            "stream": False,
+            "options": {"temperature": temperature},
+        }
+        try:
+            response = await self._client.post("/api/chat", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise OllamaError(f"Ollama request failed: {exc}") from exc
+
+        try:
+            data = response.json()
+            content = data["message"]["content"]
+        except (KeyError, ValueError) as exc:
+            raise OllamaError(f"Unexpected Ollama response: {exc}") from exc
+
+        return ChatResult(
+            content=content,
+            model=data.get("model", model),
+            output_tokens=data.get("eval_count"),
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()

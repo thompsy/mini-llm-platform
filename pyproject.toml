@@ -5,6 +5,7 @@ description = "A mini-LLM platform for my own learning!"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "pydantic-settings>=2.14.2",
 ]
 
