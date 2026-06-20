@@ -4,7 +4,7 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 
 ## Roadmap
 
-- [ ] **M1 — Inference API.** Typed FastAPI `/chat` endpoint (request → response) wrapping a local model via Ollama; pydantic schemas; capture request latency; tests with the model client mocked.
+- [x] **M1 — Inference API.** Typed FastAPI `/chat` endpoint (request → response) wrapping a local model via Ollama; pydantic schemas; capture request latency; tests with the model client mocked.
 - [ ] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (pgvector / Chroma); retrieve top-k; answer grounded with citations.
 - [ ] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency, cost) to SQLite; inspectable traces.
 - [ ] **M4 — Eval harness.** Golden Q&A set; score with exact-match + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.

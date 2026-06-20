@@ -59,6 +59,22 @@ async def test_chat_wraps_http_error() -> None:
         await client.aclose()
 
 
+async def test_chat_404_suggests_pull() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "model not found"})
+
+    client = _make_client(handler)
+    try:
+        with pytest.raises(OllamaError, match="ollama pull"):
+            await client.chat(
+                messages=[ChatMessage(role=Role.USER, content="hi")],
+                model="missing-model",
+                temperature=0.0,
+            )
+    finally:
+        await client.aclose()
+
+
 async def test_chat_wraps_malformed_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"unexpected": "shape"})

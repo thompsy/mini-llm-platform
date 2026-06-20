@@ -48,6 +48,12 @@ class OllamaClient:
         try:
             response = await self._client.post("/api/chat", json=payload)
             response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise OllamaError(
+                    f"Model {model!r} not available — run `ollama pull {model}`"
+                ) from exc
+            raise OllamaError(f"Ollama request failed: {exc}") from exc
         except httpx.HTTPError as exc:
             raise OllamaError(f"Ollama request failed: {exc}") from exc
 
