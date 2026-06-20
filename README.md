@@ -14,6 +14,9 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 
 Ideas to extend this project and deepen understanding — roughly easiest to hardest.
 
+> See [`concepts.md`](concepts.md) for running notes on the ideas behind this
+> project (embeddings, cosine similarity, and more).
+
 ### Build your own models
 
 The long-term goal: replace the off-the-shelf Ollama models with ones built from
