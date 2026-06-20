@@ -22,6 +22,8 @@ packages = ["src/app"]
 dev = [
     "mypy>=2.1.0",
     "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.18",
 ]
 
@@ -43,3 +45,7 @@ check_untyped_defs = true     # Type-checks inside functions without annotations
 
 # If a library doesn't have type stubs, don't crash
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -19,8 +19,16 @@ class ChatResult:
 class OllamaClient:
     """Thin async client for Ollama's /api/chat endpoint (non-streaming)."""
 
-    def __init__(self, base_url: str, timeout: float) -> None:
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._client = httpx.AsyncClient(
+            base_url=base_url, timeout=timeout, transport=transport
+        )
 
     async def chat(
         self,

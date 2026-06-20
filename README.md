@@ -58,7 +58,8 @@ Interactive API docs: <http://127.0.0.1:8000/docs>
 ```bash
 uv run ruff check .      # lint
 uv run ruff format .     # format
-uv run mypy .            # type-check
+uv run mypy src          # type-check
+uv run pytest            # tests
 ```
 
 ## Project structure
