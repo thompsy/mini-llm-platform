@@ -11,6 +11,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="APP_")
 
+    # Server
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+    # Ollama / model
     ollama_base_url: str = "http://localhost:11434"
     model: str = "llama3.2:3b"
     request_timeout: float = 60.0

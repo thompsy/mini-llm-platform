@@ -13,6 +13,8 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 ## Tech stack
 
 - **Language:** Python 3.12, managed with [uv](https://docs.astral.sh/uv/)
+- **API:** FastAPI + uvicorn, pydantic / pydantic-settings, httpx
+- **LLM backend:** [Ollama](https://ollama.com) (local model)
 - **Quality:** ruff (lint + format), mypy, pre-commit
 
 ## Getting started
@@ -35,8 +37,21 @@ uv run pre-commit install
 ### Run
 
 ```bash
+# Start the API (host/port from .env; defaults to http://127.0.0.1:8000)
 uv run python -m app.main
 ```
+
+With [Ollama](https://ollama.com) running, from another terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+
+curl http://127.0.0.1:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+Interactive API docs: <http://127.0.0.1:8000/docs>
 
 ### Development
 
@@ -50,8 +65,14 @@ uv run mypy .            # type-check
 
 ```
 .
-├── main.py                  # entry point
+├── src/app/
+│   ├── main.py              # FastAPI app + lifespan + entry point
+│   ├── config.py            # settings (pydantic-settings)
+│   ├── models.py            # request/response schemas
+│   ├── api/routes.py        # /chat, /health endpoints
+│   └── llm/client.py        # async Ollama client
 ├── pyproject.toml           # deps + ruff/mypy config
 ├── .pre-commit-config.yaml
+├── .env.example
 └── README.md
 ```
