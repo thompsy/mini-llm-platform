@@ -12,14 +12,21 @@ upserts in place rather than creating duplicates.
 
 import argparse
 import asyncio
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import get_settings
 from app.llm.embeddings import OllamaEmbedder
+from app.logging_config import setup_logging
 from app.rag.chunking import chunk_text
 from app.rag.store import ChromaStore, VectorStore
+
+logger = logging.getLogger(__name__)
+
+# Length of the chunk text preview emitted at DEBUG level.
+_PREVIEW_CHARS = 80
 
 # Only plain-text corpora for M2.
 SUPPORTED_SUFFIXES = (".md", ".txt")
@@ -60,13 +67,26 @@ async def ingest(
 ) -> IngestResult:
     """Read, chunk, embed, and upsert every supported file under ``paths``."""
     files = _iter_files(paths)
+    logger.info("ingesting %d file(s)", len(files))
 
     total_chunks = 0
     for file in files:
         text = file.read_text(encoding="utf-8")
         chunks = chunk_text(text, size=chunk_size, overlap=chunk_overlap)
         if not chunks:
+            logger.info("skipping %s (no chunks)", file)
             continue
+
+        logger.info("ingesting %s -> %d chunk(s)", file, len(chunks))
+        for index, chunk in enumerate(chunks):
+            preview = chunk[:_PREVIEW_CHARS].replace("\n", " ")
+            logger.debug(
+                "  chunk %d (%d words): %s%s",
+                index,
+                len(chunk.split()),
+                preview,
+                "..." if len(chunk) > _PREVIEW_CHARS else "",
+            )
 
         embeddings = await embedder.embed(texts=chunks, model=model)
         source = str(file)
@@ -81,6 +101,7 @@ async def ingest(
         )
         total_chunks += len(chunks)
 
+    logger.info("ingested %d chunk(s) from %d file(s)", total_chunks, len(files))
     return IngestResult(files=len(files), chunks=total_chunks)
 
 
@@ -111,10 +132,18 @@ def _main() -> None:
         type=Path,
         help="Files or directories to ingest (.md/.txt).",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG logging (per-chunk previews), overriding APP_LOG_LEVEL.",
+    )
     args = parser.parse_args()
 
-    result = asyncio.run(_run(args.paths))
-    print(f"Ingested {result.chunks} chunks from {result.files} files.")
+    level = "DEBUG" if args.verbose else get_settings().log_level
+    setup_logging(level)
+
+    asyncio.run(_run(args.paths))
 
 
 if __name__ == "__main__":

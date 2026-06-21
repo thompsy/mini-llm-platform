@@ -1,4 +1,7 @@
+import logging
 from pathlib import Path
+
+import pytest
 
 from app.rag.ingest import ingest
 from app.rag.store import ChromaStore
@@ -113,3 +116,32 @@ async def test_ingest_only_picks_supported_files(tmp_path: Path) -> None:
     result = await _ingest(corpus, store, FakeEmbedder())
 
     assert result.files == 2  # .md and .txt only
+
+
+async def test_ingest_logs_summary_at_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("alpha beta gamma")
+
+    store = _store(tmp_path)
+    with caplog.at_level(logging.INFO, logger="app.rag.ingest"):
+        await _ingest(corpus, store, FakeEmbedder())
+
+    assert any("ingested 1 chunk" in r.message for r in caplog.records)
+
+
+async def test_ingest_logs_chunk_preview_at_debug(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("alpha beta gamma")
+
+    store = _store(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger="app.rag.ingest"):
+        await _ingest(corpus, store, FakeEmbedder())
+
+    debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+    assert any("chunk 0" in m for m in debug_messages)

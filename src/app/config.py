@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     chunk_size: int = 200
     chunk_overlap: int = 40
 
+    # Logging
+    log_level: str = "INFO"
+
 
 @lru_cache
 def get_settings() -> Settings:

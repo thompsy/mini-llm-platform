@@ -1,4 +1,8 @@
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingError(Exception):
@@ -37,6 +41,7 @@ class OllamaEmbedder:
         if not texts:
             raise EmbeddingError("texts must not be empty")
 
+        logger.debug("embedding %d text(s) with model %r", len(texts), model)
         payload = {"model": model, "input": texts}
         try:
             response = await self._client.post("/api/embed", json=payload)
@@ -60,6 +65,8 @@ class OllamaEmbedder:
             raise EmbeddingError(
                 f"Expected {len(texts)} embeddings, got {len(embeddings)}"
             )
+        dim = len(embeddings[0]) if embeddings else 0
+        logger.debug("received %d vector(s) of dim %d", len(embeddings), dim)
         return [list(vector) for vector in embeddings]
 
     async def aclose(self) -> None:
