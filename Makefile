@@ -6,7 +6,7 @@ DATA ?= data
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat ingest clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once ingest clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -63,10 +63,31 @@ run: ## Start the API (uvicorn via app.main)
 	uv run python -m app.main
 
 chat: ## Send a sample /chat request (PROMPT="..." PORT=8000)
-	curl -s http://localhost:$(PORT)/chat \
+	@curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { \
+		echo "API not running on port $(PORT). Start it in another terminal with 'make run',"; \
+		echo "or use 'make chat-once' to start it, send the prompt, and stop it automatically."; \
+		exit 1; \
+	}
+	@curl -s http://localhost:$(PORT)/chat \
 		-H 'Content-Type: application/json' \
 		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}'
 	@echo
+
+chat-once: ## Start API, send one /chat, then stop it (PROMPT="..." PORT=8000)
+	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) & \
+	SERVER_PID=$$!; \
+	trap 'kill $$SERVER_PID 2>/dev/null' EXIT; \
+	echo "Waiting for API on port $(PORT)..."; \
+	for i in $$(seq 1 30); do \
+		curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 && break; \
+		sleep 0.5; \
+	done; \
+	curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { echo "API failed to start"; exit 1; }; \
+	echo "--- response ---"; \
+	curl -s http://localhost:$(PORT)/chat \
+		-H 'Content-Type: application/json' \
+		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}'; \
+	echo
 
 ingest: ## Ingest documents into the RAG store (DATA=data)
 	uv run python -m app.rag.ingest $(DATA)
