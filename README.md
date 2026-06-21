@@ -36,6 +36,13 @@ scratch, then serve them through this same platform (the `OllamaClient` /
 - **Swap them into RAG.** Once both exist, run the full M2 pipeline end-to-end on
   your own models and compare retrieval/answer quality against the Ollama models.
 
+### Agentic patterns
+
+- **ReAct agent with tool use.** Implement the Reason + Act loop: the model emits `Thought → Action → Observation` in a cycle until it can answer. Wire the existing RAG pipeline as a `rag_search` tool alongside trivials like `calculator` and `get_date`. Add a `/agent` endpoint alongside `/chat` and `/rag`. _Concepts: tool schemas, structured output parsing, how the model decides when to call vs. answer, context growth over turns._
+- **Iterative / self-correcting RAG.** After initial retrieval, ask the model whether the context is sufficient; if not, have it reformulate the query and retrieve again (up to N rounds). Extends M2 without a major architecture change. _Concepts: query rewriting, conditional retrieval loops, cost/latency vs. answer-quality tradeoff._
+- **Planner / executor split.** A two-agent pipeline: a Planner decomposes a goal into a JSON step plan; an Executor runs each step using RAG, chat, or other tools and feeds results back. Naturally pairs with M3 tracing (one span per step). _Concepts: orchestration, structured outputs, how plan/execute failures propagate._
+- **LLM-as-judge eval agent.** A meta-agent that runs the M4 golden Q&A set, grades each answer with the model on a structured rubric, and writes a regression report. _Concepts: LLM-as-judge, self-serving bias, rubric design, calibration against human labels._
+
 ### Concepts worth a deeper dive
 
 - **Embeddings:** why encoder (bidirectional) vs. decoder (causal); dimensionality

@@ -2,6 +2,34 @@
 
 Running notes on the ideas behind this project, to revisit later.
 
+## Terminology
+
+Brief definitions of recurring terms.
+
+**Token.** The unit a language model operates on — not a word, but a sub-word fragment (e.g. "embedding" might be `["embed", "ding"]`). Models read and write sequences of tokens; all limits (context window, cost, speed) are measured in tokens, not characters or words.
+
+**Context window.** The maximum number of tokens a model can "see" at once — its working memory. Everything outside the window is invisible to it. Modern models range from ~8 k to ~200 k tokens. RAG is partly a workaround for this limit: retrieve the relevant slice of a large corpus rather than fitting it all in.
+
+**LLM (Large Language Model).** A transformer-based neural network trained to predict the next token given a sequence of tokens. "Large" refers to parameter count (billions). Despite the name, the same mechanism handles summarisation, translation, code, and reasoning — next-token prediction is a surprisingly general objective.
+
+**Prompt.** The input text (sequence of tokens) you hand to a model. Everything the model knows about your task comes from the prompt; prompt engineering is the craft of phrasing inputs to get useful outputs.
+
+**Inference.** Running a trained model to produce an output — as opposed to *training*, which updates the weights. This project only does inference (via Ollama); training is the "build your own models" stretch goal.
+
+**Embedding.** A fixed-length vector (list of floats) that represents a piece of text in a high-dimensional space where similar meanings sit close together. Produced by an *encoder* model (e.g. `nomic-embed-text`). See the _Embeddings & cosine similarity_ section below for the full picture.
+
+**Vector store.** A database optimised for similarity search over embeddings. Given a query vector, it returns the *k* nearest stored vectors efficiently (using approximate nearest-neighbour algorithms like HNSW). This project uses Chroma.
+
+**RAG (Retrieval-Augmented Generation).** A pattern that grounds a generative model's answer in retrieved documents: embed the query → find the most similar chunks in the vector store → inject those chunks into the prompt → ask the model to answer *only* from that context. Reduces hallucination and lets the model answer questions about documents it was never trained on.
+
+**Chunking.** Splitting a document into smaller pieces before embedding, because embedding a whole document into one vector loses fine-grained detail. Chunk size and overlap are tunable; too small loses context, too large dilutes the signal.
+
+**Agent.** A model in a loop that can take *actions* (call tools, query APIs, run code) and observe results before deciding what to do next, rather than producing a single response and stopping. The loop runs until the model decides it has enough to answer, or hits a step limit.
+
+**Tool use / function calling.** A protocol where the model can emit a structured request to call a named function (e.g. `rag_search("cosine similarity")`) instead of plain text. The caller executes the function, returns the result, and the model continues. Requires the model to have been trained to produce and interpret these structured calls.
+
+**ReAct.** A specific agentic prompting pattern (_Reason + Act_): the model alternates between a `Thought` (reasoning about what to do), an `Action` (tool call), and an `Observation` (tool result), cycling until it can produce a final answer. Simple to implement; surprisingly capable.
+
 ## Embeddings & cosine similarity
 
 **The core bet (distributional hypothesis).** "You shall know a word by the
