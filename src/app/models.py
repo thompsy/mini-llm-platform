@@ -29,3 +29,22 @@ class ChatResponse(BaseModel):
     content: str
     model: str
     metrics: ChatMetrics | None = None
+
+
+class RagRequest(BaseModel):
+    question: str = Field(min_length=1)
+    top_k: int | None = Field(default=None, ge=1, le=20)
+    min_score: float | None = Field(default=None, ge=0.0, le=2.0)
+
+
+class CitationModel(BaseModel):
+    index: int
+    source: str
+    score: float
+    snippet: str
+
+
+class RagResponse(BaseModel):
+    answer: str
+    citations: list[CitationModel]
+    metrics: ChatMetrics | None = None

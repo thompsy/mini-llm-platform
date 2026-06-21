@@ -2,11 +2,12 @@ MODEL ?= llama3.2:3b
 EMBED_MODEL ?= nomic-embed-text
 PORT ?= 8000
 PROMPT ?= Hello!
+QUESTION ?= Who created Python?
 DATA ?= data
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once ingest clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -87,6 +88,33 @@ chat-once: ## Start API, send one /chat, then stop it (PROMPT="..." PORT=8000)
 	curl -s http://localhost:$(PORT)/chat \
 		-H 'Content-Type: application/json' \
 		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}'; \
+	echo
+
+rag: ## Send a sample /rag request (QUESTION="..." PORT=8000); run `make ingest` first
+	@curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { \
+		echo "API not running on port $(PORT). Start it in another terminal with 'make run',"; \
+		echo "or use 'make rag-once' to start it, send the question, and stop it automatically."; \
+		exit 1; \
+	}
+	@curl -s http://localhost:$(PORT)/rag \
+		-H 'Content-Type: application/json' \
+		-d '{"question": "$(QUESTION)"}'
+	@echo
+
+rag-once: ## Start API, send one /rag, then stop it (QUESTION="..."); run `make ingest` first
+	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) & \
+	SERVER_PID=$$!; \
+	trap 'kill $$SERVER_PID 2>/dev/null' EXIT; \
+	echo "Waiting for API on port $(PORT)..."; \
+	for i in $$(seq 1 30); do \
+		curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 && break; \
+		sleep 0.5; \
+	done; \
+	curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { echo "API failed to start"; exit 1; }; \
+	echo "--- response ---"; \
+	curl -s http://localhost:$(PORT)/rag \
+		-H 'Content-Type: application/json' \
+		-d '{"question": "$(QUESTION)"}'; \
 	echo
 
 ingest: ## Ingest documents into the RAG store (DATA=data)

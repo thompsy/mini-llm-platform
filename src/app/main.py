@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from app.api.routes import router
 from app.config import get_settings
 from app.llm.client import OllamaClient
+from app.llm.embeddings import OllamaEmbedder
 from app.logging_config import setup_logging
+from app.rag.store import ChromaStore
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +22,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.client = OllamaClient(
         base_url=settings.ollama_base_url, timeout=settings.request_timeout
     )
+    app.state.embedder = OllamaEmbedder(
+        base_url=settings.ollama_base_url, timeout=settings.request_timeout
+    )
+    app.state.store = ChromaStore(path=settings.vector_store_dir)
+    logger.info("vector store dir: %s", settings.vector_store_dir)
     try:
         yield
     finally:
         logger.info("shutting down")
         await app.state.client.aclose()
+        await app.state.embedder.aclose()
 
 
 app = FastAPI(title="Mini LLM Platform", lifespan=lifespan)
