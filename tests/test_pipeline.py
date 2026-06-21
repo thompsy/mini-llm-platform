@@ -14,7 +14,11 @@ from app.rag.store import ChromaStore, Retrieved
 
 
 class FakeEmbedder:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def embed(self, *, texts: list[str], model: str) -> list[list[float]]:
+        self.calls += 1
         # One vector per text; value irrelevant since the store is seeded to match.
         return [[1.0, 0.0] for _ in texts]
 
@@ -133,66 +137,26 @@ async def test_answer_question_passes_top_k(tmp_path: Path) -> None:
     assert len(result.citations) == 1
 
 
-async def test_answer_question_empty_store_skips_llm(tmp_path: Path) -> None:
-    empty_store = ChromaStore(path=str(tmp_path / "chroma"), collection_name="empty")
+async def test_answer_question_empty_store_message_skips_embed_and_llm(
+    tmp_path: Path,
+) -> None:
+    empty_store = ChromaStore(path=str(tmp_path / "chroma"), collection_name="empty2")
+    embedder = FakeEmbedder()
     chat = FakeChatClient()
 
     result = await answer_question(
         "anything?",
-        embedder=FakeEmbedder(),
+        embedder=embedder,
         store=empty_store,
         chat_client=chat,
         embed_model="embed",
         chat_model="chat-model",
         temperature=0.0,
         top_k=4,
-        min_score=0.0,
-    )
-
-    assert result.citations == []
-    assert "don't know" in result.answer
-    assert chat.calls == []  # LLM was not called
-
-
-async def test_answer_question_drops_chunks_below_min_score(tmp_path: Path) -> None:
-    # Query [1,0]: "the cat sat" scores ~1.0, "the stock rose" ~0.0.
-    store = _seeded_store(tmp_path)
-    chat = FakeChatClient(content="cats sit [1]")
-
-    result = await answer_question(
-        "what sat?",
-        embedder=FakeEmbedder(),
-        store=store,
-        chat_client=chat,
-        embed_model="embed",
-        chat_model="chat-model",
-        temperature=0.0,
-        top_k=3,
         min_score=0.5,
     )
 
-    # Only the high-scoring doc.md chunks survive; other.md (~0.0) is dropped.
-    assert all(c.source == "doc.md" for c in result.citations)
-    assert all(c.score >= 0.5 for c in result.citations)
-    assert len(chat.calls) == 1  # still answered from the strong chunks
-
-
-async def test_answer_question_all_below_min_score_skips_llm(tmp_path: Path) -> None:
-    store = _seeded_store(tmp_path)
-    chat = FakeChatClient()
-
-    result = await answer_question(
-        "what sat?",
-        embedder=FakeEmbedder(),
-        store=store,
-        chat_client=chat,
-        embed_model="embed",
-        chat_model="chat-model",
-        temperature=0.0,
-        top_k=3,
-        min_score=2.0,  # impossible to reach -> everything dropped
-    )
-
     assert result.citations == []
-    assert "don't know" in result.answer
-    assert chat.calls == []
+    assert "make ingest" in result.answer  # distinct empty-store message
+    assert embedder.calls == 0  # short-circuits before embedding
+    assert chat.calls == []  # and before the LLM

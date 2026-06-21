@@ -30,6 +30,11 @@ SYSTEM_PROMPT = (
 # Message returned (without calling the LLM) when retrieval finds nothing.
 _NO_CONTEXT_ANSWER = "I don't know — no relevant sources were found."
 
+# Message returned when the store has no documents at all (vs. no good match).
+_EMPTY_STORE_ANSWER = (
+    "No documents have been ingested yet — run ingestion first (e.g. `make ingest`)."
+)
+
 # Length of the citation preview snippet.
 _SNIPPET_CHARS = 160
 
@@ -114,6 +119,11 @@ async def answer_question(
     prompt, so the model only sees (and we only cite) genuinely similar sources.
     """
     logger.info("answering question (top_k=%d, min_score=%.2f)", top_k, min_score)
+
+    if store.count() == 0:
+        # Distinguish "nothing ingested yet" from "ingested but no good match".
+        logger.info("vector store is empty; no documents ingested")
+        return RagResult(answer=_EMPTY_STORE_ANSWER, citations=[], output_tokens=None)
 
     query_vectors = await embedder.embed(texts=[question], model=embed_model)
     retrieved = store.query(embedding=query_vectors[0], top_k=top_k)

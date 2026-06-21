@@ -32,6 +32,9 @@ class FakeStore:
         self.top_k_seen = top_k
         return self.hits[:top_k]
 
+    def count(self) -> int:
+        return len(self.hits)
+
 
 class FakeChatClient:
     def __init__(
@@ -154,7 +157,7 @@ def test_rag_rejects_invalid_input(
 
 def test_rag_embedding_error_returns_503(test_client: TestClient) -> None:
     _wire(
-        store=FakeStore([]),
+        store=FakeStore([_hit("a.md", 0.9)]),  # non-empty so we reach the embed step
         chat=FakeChatClient(),
         embedder=FakeEmbedder(error=EmbeddingError("embedder down")),
     )
@@ -173,3 +176,16 @@ def test_rag_ollama_error_returns_503(test_client: TestClient) -> None:
 
     assert resp.status_code == 503
     assert "backend down" in resp.json()["detail"]
+
+
+def test_rag_empty_store_suggests_ingest(test_client: TestClient) -> None:
+    chat = FakeChatClient()
+    _wire(store=FakeStore([]), chat=chat)  # count() == 0
+
+    resp = test_client.post("/rag", json={"question": "hi"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["citations"] == []
+    assert "make ingest" in body["answer"]
+    assert chat.calls == []  # short-circuits, no LLM call
