@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 
 import pytest
@@ -124,3 +125,31 @@ def test_chat_ollama_error_returns_503(test_client: TestClient) -> None:
 
     assert resp.status_code == 503
     assert "backend down" in resp.json()["detail"]
+
+
+def test_chat_logs_success_at_info(
+    test_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    _use_client(FakeClient(result=ChatResult(content="x", model="m", output_tokens=3)))
+
+    with caplog.at_level(logging.INFO, logger="app.api.routes"):
+        test_client.post(
+            "/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
+
+    info = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("chat ok" in m and "model=m" in m for m in info)
+
+
+def test_chat_logs_warning_on_error(
+    test_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    _use_client(FakeClient(error=OllamaError("backend down")))
+
+    with caplog.at_level(logging.WARNING, logger="app.api.routes"):
+        test_client.post(
+            "/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
+
+    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("chat failed" in m for m in warnings)

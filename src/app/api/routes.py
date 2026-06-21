@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Annotated
 
@@ -6,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.config import Settings, get_settings
 from app.llm.client import OllamaClient, OllamaError
 from app.models import ChatMetrics, ChatRequest, ChatResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -32,6 +35,12 @@ async def chat(
         if payload.temperature is not None
         else settings.default_temperature
     )
+    logger.debug(
+        "chat request: %d message(s), model=%s, temperature=%s",
+        len(payload.messages),
+        model,
+        temperature,
+    )
 
     start = time.perf_counter()
     try:
@@ -39,11 +48,18 @@ async def chat(
             messages=payload.messages, model=model, temperature=temperature
         )
     except OllamaError as exc:
+        logger.warning("chat failed (model=%s): %s", model, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
     total_seconds = time.perf_counter() - start
 
+    logger.info(
+        "chat ok: model=%s, %.3fs, output_tokens=%s",
+        result.model,
+        total_seconds,
+        result.output_tokens,
+    )
     return ChatResponse(
         content=result.content,
         model=result.model,

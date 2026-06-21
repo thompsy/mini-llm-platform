@@ -1,8 +1,11 @@
+import logging
 from dataclasses import dataclass
 
 import httpx
 
 from app.models import ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaError(Exception):
@@ -45,6 +48,7 @@ class OllamaClient:
             "stream": False,
             "options": {"temperature": temperature},
         }
+        logger.debug("calling Ollama /api/chat (model=%s)", model)
         try:
             response = await self._client.post("/api/chat", json=payload)
             response.raise_for_status()
@@ -53,8 +57,10 @@ class OllamaClient:
                 raise OllamaError(
                     f"Model {model!r} not available — run `ollama pull {model}`"
                 ) from exc
+            logger.debug("Ollama HTTP error: %s", exc)
             raise OllamaError(f"Ollama request failed: {exc}") from exc
         except httpx.HTTPError as exc:
+            logger.debug("Ollama transport error: %s", exc)
             raise OllamaError(f"Ollama request failed: {exc}") from exc
 
         try:
