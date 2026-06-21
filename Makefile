@@ -2,10 +2,11 @@ MODEL ?= llama3.2:3b
 EMBED_MODEL ?= nomic-embed-text
 PORT ?= 8000
 PROMPT ?= Hello!
+DATA ?= data
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat ingest clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -66,6 +67,9 @@ chat: ## Send a sample /chat request (PROMPT="..." PORT=8000)
 		-H 'Content-Type: application/json' \
 		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}'
 	@echo
+
+ingest: ## Ingest documents into the RAG store (DATA=data)
+	uv run python -m app.rag.ingest $(DATA)
 
 clean: ## Remove caches
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
