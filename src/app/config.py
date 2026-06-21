@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     embed_model: str = "nomic-embed-text"
     vector_store_dir: str = ".chroma"
     rag_top_k: int = 4
+    rag_min_score: float = 0.5
     chunk_size: int = 200
     chunk_overlap: int = 40
 
