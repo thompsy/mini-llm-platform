@@ -5,7 +5,7 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 ## Roadmap
 
 - [x] **M1 — Inference API.** Typed FastAPI `/chat` endpoint (request → response) wrapping a local model via Ollama; pydantic schemas; capture request latency; tests with the model client mocked.
-- [ ] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (pgvector / Chroma); retrieve top-k; answer grounded with citations.
+- [x] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (Chroma); retrieve top-k; answer grounded with citations.
 - [ ] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency, cost) to SQLite; inspectable traces.
 - [ ] **M4 — Eval harness.** Golden Q&A set; score with exact-match + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
 - [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; reasoning agent with tool use (ReAct + function calling); distillation toy; full `docker-compose` (app + Postgres/pgvector).
@@ -99,6 +99,60 @@ uv run mypy src          # type-check
 uv run pytest            # tests
 ```
 
+## RAG (M2)
+
+Answer questions grounded in a local document corpus (`data/`), citing the
+sources used. The pipeline embeds each chunk, retrieves the most similar chunks
+for a question, and asks the model to answer **only** from those sources.
+
+> Requires an embedding model in addition to the chat model. `make setup` pulls
+> both; otherwise run `ollama pull nomic-embed-text`.
+
+### Ingest
+
+Indexing is an offline step — run it once, and again whenever `data/` changes:
+
+```bash
+make ingest                     # ingest data/ into the vector store (.chroma)
+make ingest DATA=path/to/docs   # ingest a different directory
+
+# verbose: per-chunk previews + embedding dimensions
+uv run python -m app.rag.ingest -v data
+```
+
+### Query
+
+```bash
+# A) API already running (e.g. `make run` in another terminal):
+make rag PROMPT="Who created Python?"
+
+# B) one-shot: start the API, ask, then stop it:
+make rag-once PROMPT="What is cosine similarity?"
+
+# or raw curl (top_k / min_score are optional overrides):
+curl http://127.0.0.1:8000/rag \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Who created Python?", "top_k": 4, "min_score": 0.5}'
+```
+
+The answer cites sources inline as `[1]`, `[2]`, … and the response lists each
+citation (source + similarity score). If no chunk clears `min_score`, the answer
+is "I don't know"; if nothing has been ingested yet, it says to run `make ingest`.
+
+### Configuration
+
+RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`):
+
+| Variable               | Default            | Meaning                                    |
+| ---------------------- | ------------------ | ------------------------------------------ |
+| `APP_EMBED_MODEL`      | `nomic-embed-text` | Ollama model used to embed text            |
+| `APP_VECTOR_STORE_DIR` | `.chroma`          | where the Chroma index is persisted        |
+| `APP_RAG_TOP_K`        | `4`                | chunks retrieved per query                 |
+| `APP_RAG_MIN_SCORE`    | `0.5`              | drop retrieved chunks below this score     |
+| `APP_CHUNK_SIZE`       | `200`              | max words per chunk                        |
+| `APP_CHUNK_OVERLAP`    | `40`               | words shared between adjacent chunks        |
+| `APP_LOG_LEVEL`        | `INFO`             | logging level (`DEBUG` for per-chunk logs) |
+
 ## Project structure
 
 ```
@@ -106,9 +160,21 @@ uv run pytest            # tests
 ├── src/app/
 │   ├── main.py              # FastAPI app + lifespan + entry point
 │   ├── config.py            # settings (pydantic-settings)
-│   ├── models.py            # request/response schemas
-│   ├── api/routes.py        # /chat, /health endpoints
-│   └── llm/client.py        # async Ollama client
+│   ├── models.py            # request/response schemas (chat + rag)
+│   ├── logging_config.py    # central logging setup
+│   ├── api/routes.py        # /chat, /rag, /health endpoints
+│   ├── llm/
+│   │   ├── client.py        # async Ollama chat client
+│   │   └── embeddings.py    # async Ollama embeddings client
+│   └── rag/
+│       ├── chunking.py      # deterministic word-based chunker
+│       ├── store.py         # Chroma vector store (VectorStore protocol)
+│       ├── ingest.py        # offline ingest CLI
+│       └── pipeline.py      # query-time RAG (retrieve + ground + cite)
+├── data/                    # sample corpus (.md)
+├── tests/                   # pytest suite
+├── Makefile                 # setup/lint/test/run/chat/ingest/rag targets
+├── concepts.md              # notes on the ideas behind the project
 ├── pyproject.toml           # deps + ruff/mypy config
 ├── .pre-commit-config.yaml
 ├── .env.example
