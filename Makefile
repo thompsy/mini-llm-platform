@@ -74,7 +74,7 @@ chat: ## Send a sample /chat request (PROMPT="..." PORT=8000)
 	@echo
 
 chat-once: ## Start API, send one /chat, then stop it (PROMPT="..." PORT=8000)
-	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) & \
+	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) > /dev/null 2>&1 & \
 	SERVER_PID=$$!; \
 	trap 'kill $$SERVER_PID 2>/dev/null' EXIT; \
 	echo "Waiting for API on port $(PORT)..."; \
@@ -102,7 +102,7 @@ rag: ## Send a sample /rag request (PROMPT="..." PORT=8000); run `make ingest` f
 	@echo
 
 rag-once: ## Start API, send one /rag, then stop it (PROMPT="..."); run `make ingest` first
-	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) & \
+	@uv run uvicorn app.main:app --host 127.0.0.1 --port $(PORT) > /dev/null 2>&1 & \
 	SERVER_PID=$$!; \
 	trap 'kill $$SERVER_PID 2>/dev/null' EXIT; \
 	echo "Waiting for API on port $(PORT)..."; \
