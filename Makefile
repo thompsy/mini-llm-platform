@@ -86,8 +86,7 @@ chat-once: ## Start API, send one /chat, then stop it (PROMPT="..." PORT=8000)
 	echo "--- response ---"; \
 	curl -s http://localhost:$(PORT)/chat \
 		-H 'Content-Type: application/json' \
-		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}'; \
-	echo
+		-d '{"messages": [{"role": "user", "content": "$(PROMPT)"}]}' | jq .
 
 rag: ## Send a sample /rag request (PROMPT="..." PORT=8000); run `make ingest` first
 	@curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { \
@@ -115,8 +114,7 @@ rag-once: ## Start API, send one /rag, then stop it (PROMPT="..."); run `make in
 	echo "Asking: \"$(PROMPT)\""; \
 	curl -s http://localhost:$(PORT)/rag \
 		-H 'Content-Type: application/json' \
-		-d '{"question": "$(PROMPT)"}'; \
-	echo
+		-d '{"question": "$(PROMPT)"}' | jq .
 
 ingest: ## Ingest documents into the RAG store (DATA=data)
 	uv run python -m app.rag.ingest $(DATA)
