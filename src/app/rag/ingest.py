@@ -71,7 +71,11 @@ async def ingest(
 
     total_chunks = 0
     for file in files:
-        text = file.read_text(encoding="utf-8")
+        try:
+            text = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logger.warning("skipping %s (not valid UTF-8)", file)
+            continue
         chunks = chunk_text(text, size=chunk_size, overlap=chunk_overlap)
         if not chunks:
             logger.info("skipping %s (no chunks)", file)
