@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.rag.pipeline import answer_question
 from app.rag.store import ChromaStore
+from app.tracing import record_span
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +65,12 @@ async def chat(
 
     start = time.perf_counter()
     try:
-        result = await client.chat(
-            messages=payload.messages, model=model, temperature=temperature
-        )
+        with record_span("chat") as span:
+            result = await client.chat(
+                messages=payload.messages, model=model, temperature=temperature
+            )
+            span.metadata["model"] = model
+            span.metadata["output_tokens"] = result.output_tokens
     except OllamaError as exc:
         logger.warning("chat failed (model=%s): %s", model, exc)
         raise HTTPException(

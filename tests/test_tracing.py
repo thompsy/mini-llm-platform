@@ -1,8 +1,16 @@
 """Tests for the tracing core: Span, Trace, ContextVar, record_span."""
 
 import asyncio
+import logging
 
-from app.tracing import Trace, _current_trace, record_span
+from fastapi.testclient import TestClient
+
+from app.api.routes import get_client
+from app.llm.client import ChatResult
+from app.main import app
+from app.rag.pipeline import answer_question
+from app.rag.store import Retrieved
+from app.tracing import Trace, _current_trace, record_span, start_trace
 
 
 def test_span_duration_while_open():
@@ -73,7 +81,9 @@ def test_contextvars_isolated_across_tasks():
             token = _current_trace.set(trace)
             try:
                 await asyncio.sleep(0)  # yield to let other task run
-                results[name] = _current_trace.get().route if _current_trace.get() else None
+                results[name] = (
+                    _current_trace.get().route if _current_trace.get() else None
+                )
             finally:
                 _current_trace.reset(token)
 
@@ -82,3 +92,101 @@ def test_contextvars_isolated_across_tasks():
     asyncio.run(run())
     assert results["t1"] == "/chat"
     assert results["t2"] == "/rag"
+
+
+# --- Wiring: pipeline instrumentation + request middleware (M3 steps 1-2) ---
+
+
+class _FakeEmbedder:
+    async def embed(self, *, texts: list[str], model: str) -> list[list[float]]:
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+
+class _FakeStore:
+    def __init__(self, hits: list[Retrieved]) -> None:
+        self._hits = hits
+
+    def add(self, **kwargs: object) -> None:  # pragma: no cover - unused here
+        raise NotImplementedError
+
+    def count(self) -> int:
+        return len(self._hits)
+
+    def query(self, *, embedding: list[float], top_k: int) -> list[Retrieved]:
+        return self._hits
+
+
+class _FakeChat:
+    async def chat(
+        self, *, messages: object, model: str, temperature: float
+    ) -> ChatResult:
+        return ChatResult(content="answer", model=model, output_tokens=7)
+
+
+async def test_pipeline_records_spans_under_active_trace() -> None:
+    hits = [Retrieved(text="doc", metadata={"source": "s"}, score=0.9)]
+    with start_trace("/rag") as trace:
+        await answer_question(
+            "q",
+            embedder=_FakeEmbedder(),
+            store=_FakeStore(hits),
+            chat_client=_FakeChat(),
+            embed_model="e",
+            chat_model="c",
+            temperature=0.0,
+            top_k=4,
+            min_score=0.5,
+        )
+
+    assert [s.name for s in trace.spans] == ["embed_query", "retrieve", "chat"]
+    assert all(s.finished_at is not None for s in trace.spans)
+    chat_span = trace.spans[-1]
+    assert chat_span.metadata["model"] == "c"
+    assert chat_span.metadata["output_tokens"] == 7
+
+
+def _capture_main_logger(caplog) -> logging.Logger:
+    """Attach caplog's handler directly to the app.main logger.
+
+    The app's ``setup_logging`` runs ``logging.basicConfig(force=True)`` during
+    TestClient startup, which strips pytest's capture handler off the *root*
+    logger. Attaching it to the ``app.main`` logger itself survives that, since
+    ``basicConfig`` only touches the root.
+    """
+    main_logger = logging.getLogger("app.main")
+    main_logger.addHandler(caplog.handler)
+    main_logger.setLevel(logging.INFO)
+    return main_logger
+
+
+def test_middleware_creates_and_logs_trace(caplog) -> None:
+    """The chat span recorded inside the endpoint reaches the middleware's trace.
+
+    This also proves the ContextVar set in the middleware propagates into the
+    endpoint task; if it didn't, the trace would have no spans and nothing logs.
+    """
+    app.dependency_overrides[get_client] = lambda: _FakeChat()
+    main_logger = _capture_main_logger(caplog)
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+            )
+    finally:
+        main_logger.removeHandler(caplog.handler)
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert any("trace /chat" in r.message for r in caplog.records)
+
+
+def test_middleware_skips_logging_when_no_spans(caplog) -> None:
+    main_logger = _capture_main_logger(caplog)
+    try:
+        with TestClient(app) as client:
+            resp = client.get("/health")
+    finally:
+        main_logger.removeHandler(caplog.handler)
+
+    assert resp.status_code == 200
+    assert not any("trace " in r.message for r in caplog.records)

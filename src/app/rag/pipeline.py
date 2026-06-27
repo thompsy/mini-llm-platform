@@ -18,6 +18,7 @@ from typing import Protocol
 from app.llm.client import ChatResult
 from app.models import ChatMessage, Role
 from app.rag.store import Retrieved, VectorStore
+from app.tracing import record_span
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +126,14 @@ async def answer_question(
         logger.info("vector store is empty; no documents ingested")
         return RagResult(answer=_EMPTY_STORE_ANSWER, citations=[], output_tokens=None)
 
-    query_vectors = await embedder.embed(texts=[question], model=embed_model)
-    retrieved = store.query(embedding=query_vectors[0], top_k=top_k)
+    with record_span("embed_query") as span:
+        query_vectors = await embedder.embed(texts=[question], model=embed_model)
+        span.metadata["model"] = embed_model
+
+    with record_span("retrieve") as span:
+        retrieved = store.query(embedding=query_vectors[0], top_k=top_k)
+        span.metadata["top_k"] = top_k
+        span.metadata["n_results"] = len(retrieved)
 
     kept = [hit for hit in retrieved if hit.score >= min_score]
     dropped = len(retrieved) - len(kept)
@@ -146,9 +153,12 @@ async def answer_question(
         logger.debug("  [%d] %s (score=%.3f)", c.index, c.source, c.score)
 
     messages = build_messages(question, kept)
-    result = await chat_client.chat(
-        messages=messages, model=chat_model, temperature=temperature
-    )
+    with record_span("chat") as span:
+        result = await chat_client.chat(
+            messages=messages, model=chat_model, temperature=temperature
+        )
+        span.metadata["model"] = chat_model
+        span.metadata["output_tokens"] = result.output_tokens
     return RagResult(
         answer=result.content,
         citations=citations,
