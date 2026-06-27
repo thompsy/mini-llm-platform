@@ -146,6 +146,47 @@ learning.
 The "build your own models" and "distillation" stretch goals are the _training_
 side.
 
+## Evaluation & LLM-as-judge
+
+**Why evals exist.** LLM systems have no compiler or type checker for output
+quality: the "logic" lives in prompts, weights, retrieval, and tunable knobs
+(`chunk_size`, `top_k`, `temperature`, model choice), and the output is free-form
+text that can be right in many phrasings and wrong in subtle, silent ways. So you
+cannot tell whether a change helped or hurt by reasoning about it — you have to
+*measure* on a fixed set. An eval harness is the closest thing to a test suite
+for this, and it turns silent regressions (a prompt tweak that fixes A but breaks
+B/C/D, with nothing throwing) into a number that drops. _Evals are to prompt/model
+iteration what tests are to refactoring._ (M4.)
+
+**Three complementary scorers** (this project):
+
+1. _Exact-match_ — deterministic, cheap, strict: is the reference contained in
+   the answer? Great for short facts, but punishes correct paraphrases.
+2. _recall@k_ — a *retrieval* metric: were the expected source chunks actually
+   retrieved? Separates "did we fetch the right context?" from "did we answer
+   well given it?" — so a bad answer can be localised to retrieval vs. generation.
+3. _LLM-as-judge_ — a model grades the answer against the reference on a rubric,
+   catching paraphrases exact-match misses.
+
+Using all three matters because their weaknesses differ; no single score is
+trustworthy alone.
+
+**LLM-as-judge caveats.** The judge is itself a fallible model, with known
+biases: _verbosity bias_ (prefers longer, more confident answers), _self-
+preference_ (favours text in its own style/from its own family), and _position
+bias_ (in pairwise comparisons, favours whichever answer came first). Mitigations:
+keep the rubric tight and the output constrained (here, a single word →
+`CORRECT`/`PARTIAL`/`INCORRECT`); grade at temperature 0; ideally judge with a
+*different* (often stronger) model than the one under test — never let a model be
+the sole judge of itself. And remember the judge is non-deterministic: trust
+aggregate trends across a fixed golden set over any single run.
+
+**The honest limit.** An eval is only as good as its golden set — too small or
+unrepresentative and the score misleads. The set should grow with the corpus and
+with the failures you discover in production (which is where M3 tracing feeds
+back in: observability shows *what* broke, evals check whether a fix actually
+helps before shipping).
+
 ## Embeddings & cosine similarity
 
 **The core bet (distributional hypothesis).** "You shall know a word by the

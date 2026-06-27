@@ -7,7 +7,7 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 - [x] **M1 — Inference API.** Typed FastAPI `/chat` endpoint (request → response) wrapping a local model via Ollama; pydantic schemas; capture request latency; tests with the model client mocked.
 - [x] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (Chroma); retrieve top-k; answer grounded with citations.
 - [x] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency) to SQLite; inspectable traces via `/traces`.
-- [ ] **M4 — Eval harness.** Golden Q&A set; score with exact-match + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
+- [x] **M4 — Eval harness.** Golden Q&A set; score with exact-match + recall@k + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
 - [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; reasoning agent with tool use (ReAct + function calling); distillation toy; full `docker-compose` (app + Postgres/pgvector).
 
 ## Follow-up concepts & projects
@@ -162,6 +162,8 @@ RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`
 | `APP_CHUNK_SIZE`       | `200`              | max words per chunk                        |
 | `APP_CHUNK_OVERLAP`    | `40`               | words shared between adjacent chunks        |
 | `APP_TRACE_STORE_PATH` | `traces.db`        | SQLite file where request traces are stored |
+| `APP_JUDGE_MODEL`      | `model`            | model used by the LLM-as-judge (defaults to chat model) |
+| `APP_EVAL_REGRESSION_THRESHOLD` | `0.05`    | min mean-score drop vs baseline to flag a regression |
 | `APP_LOG_LEVEL`        | `INFO`             | logging level (`DEBUG` for per-chunk logs) |
 
 ## Tracing (M3)
@@ -189,6 +191,39 @@ curl 'http://127.0.0.1:8000/traces?limit=20'   # newest first; id, route, durati
 curl http://127.0.0.1:8000/traces/<trace_id>   # full detail incl. each span + metadata
 ```
 
+## Evaluation (M4)
+
+A golden-set eval harness measures answer quality so changes (prompt, model,
+chunking, `top_k`, …) can be judged objectively instead of by vibes, and silent
+regressions get caught. The golden set (`evals/golden.json`) is a list of
+questions, each with a reference answer and the source files that *should* be
+retrieved. Each question is run through the RAG pipeline and scored three ways:
+
+- **exact-match** — is the (normalised) reference contained in the answer? A
+  strict, deterministic baseline.
+- **recall@k** — fraction of expected sources actually retrieved. Separates
+  *retrieval* quality from *answer* quality.
+- **LLM-as-judge** — a model grades the answer against the reference as
+  `CORRECT` / `PARTIAL` / `INCORRECT` (→ `1.0` / `0.5` / `0.0`), catching correct
+  paraphrases that exact-match misses.
+
+Each eval item runs inside its own trace (`eval:<id>`), so a run is inspectable
+via `make traces` just like a live request.
+
+> Needs Ollama running and an ingested corpus (`make ingest`).
+
+```bash
+make eval                                   # run the golden set, print a score table
+make eval OUTPUT=report.json                # also save the full report as JSON
+make eval BASELINE=report.json              # flag regressions vs a saved report
+make eval GOLDEN=path/to/golden.json        # use a different golden set
+```
+
+`make eval BASELINE=…` exits non-zero if any scorer's mean drops more than
+`APP_EVAL_REGRESSION_THRESHOLD` below the baseline — usable as a CI gate. Note
+the judge is an LLM and so non-deterministic run-to-run; trust aggregate trends
+over any single number, and grow the golden set as the corpus grows.
+
 ## Project structure
 
 ```
@@ -204,14 +239,21 @@ curl http://127.0.0.1:8000/traces/<trace_id>   # full detail incl. each span + m
 │   ├── llm/
 │   │   ├── client.py        # async Ollama chat client
 │   │   └── embeddings.py    # async Ollama embeddings client
-│   └── rag/
-│       ├── chunking.py      # deterministic word-based chunker
-│       ├── store.py         # Chroma vector store (VectorStore protocol)
-│       ├── ingest.py        # offline ingest CLI
-│       └── pipeline.py      # query-time RAG (retrieve + ground + cite)
+│   ├── rag/
+│   │   ├── chunking.py      # deterministic word-based chunker
+│   │   ├── store.py         # Chroma vector store (VectorStore protocol)
+│   │   ├── ingest.py        # offline ingest CLI
+│   │   └── pipeline.py      # query-time RAG (retrieve + ground + cite)
+│   └── evals/
+│       ├── dataset.py       # load/validate the golden set
+│       ├── scorers.py       # exact-match, recall@k, LLM-as-judge
+│       ├── runner.py        # run golden set through RAG + score (traced)
+│       ├── report.py        # console table, JSON I/O, baseline comparison
+│       └── __main__.py      # eval CLI (python -m app.evals)
 ├── data/                    # sample corpus (.md)
+├── evals/golden.json        # golden Q&A set for the eval harness
 ├── tests/                   # pytest suite
-├── Makefile                 # setup/lint/test/run/chat/ingest/rag/traces targets
+├── Makefile                 # setup/lint/test/run/chat/ingest/rag/traces/eval targets
 ├── concepts.md              # notes on the ideas behind the project
 ├── pyproject.toml           # deps + ruff/mypy config
 ├── .pre-commit-config.yaml
