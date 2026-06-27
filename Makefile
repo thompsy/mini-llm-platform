@@ -5,10 +5,13 @@ PROMPT ?= Hello!
 DATA ?= data
 LIMIT ?= 20
 ID ?=
+GOLDEN ?= evals/golden.json
+BASELINE ?=
+OUTPUT ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest traces trace clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest traces trace eval clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -135,6 +138,9 @@ trace: ## Show one trace and its spans (ID=<trace_id> PORT=8000); get an id from
 		exit 1; \
 	}
 	@curl -s "http://localhost:$(PORT)/traces/$(ID)" | jq .
+
+eval: ## Run the eval harness over the golden set (GOLDEN=… OUTPUT=… BASELINE=…); needs Ollama + `make ingest`
+	uv run python -m app.evals $(GOLDEN) $(if $(OUTPUT),--output $(OUTPUT)) $(if $(BASELINE),--baseline $(BASELINE))
 
 clean: ## Remove caches
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

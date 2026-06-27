@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Tracing
     trace_store_path: str = "traces.db"
 
+    # Evaluation
+    judge_model: str | None = None  # falls back to `model` when unset
+    eval_regression_threshold: float = 0.05
+
     # Logging
     log_level: str = "INFO"
 
