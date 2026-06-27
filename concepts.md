@@ -30,6 +30,66 @@ Brief definitions of recurring terms.
 
 **ReAct.** A specific agentic prompting pattern (_Reason + Act_): the model alternates between a `Thought` (reasoning about what to do), an `Action` (tool call), and an `Observation` (tool result), cycling until it can produce a final answer. Simple to implement; surprisingly capable.
 
+## Model taxonomy
+
+Ways people categorise models. These are mostly **independent axes, not one
+hierarchy** — `llama3.2:3b` is at once a _foundation_ model, _chat_-tuned, a
+_decoder_, _text-only_, _quantised_, an _SLM_, and _open-weight_, all true at
+once. Each axis answers a different design question.
+
+**Foundation vs. frontier.** A _foundation model_ is a large model trained on
+broad data that serves as a reusable base you adapt (prompt / fine-tune / RAG)
+rather than training from scratch — about **role and generality**, not quality.
+A _frontier model_ is one at the leading edge of current capability — about
+**rank**, and relative/moving (today's frontier is next year's ordinary). Nearly
+all frontier models are foundation models; most foundation models are not
+frontier. This project does AI engineering on small, non-frontier foundation
+models (`llama3.2:3b`, `nomic-embed-text`).
+
+**By training stage** (how "finished" it is) — the most practically important:
+- _Base / pretrained_ — only next-token prediction; continues text but doesn't
+  follow instructions or chat. Raw material. (Pull one by accident and prompts
+  behave strangely.)
+- _Instruction-tuned (instruct)_ — base + supervised fine-tuning on
+  instruction→response pairs; now follows commands.
+- _Chat / aligned_ — further tuned (RLHF/DPO) for conversational, helpful, safe
+  behaviour. **`llama3.2:3b` is here** — why `/chat` works out of the box.
+- _Reasoning_ — trained to emit long chains of thought before answering; better
+  at math/logic/multi-step, at the cost of latency and tokens.
+
+**By architecture / objective.**
+- _Encoder_ (bidirectional, BERT-style) — sees the whole input at once; good for
+  understanding/representations. **Embedding models are usually encoders**
+  (`nomic-embed-text`).
+- _Decoder_ (causal/autoregressive, GPT-style) — predicts the next token; good
+  for generation. The chat model.
+- _Encoder-decoder_ (seq2seq, T5-style) — input→output transforms (translation,
+  summarisation).
+
+**By role in a RAG pipeline.**
+- _Embedding (bi-encoder)_ — encodes query and docs separately; fast; the
+  first-pass retrieval this project uses.
+- _Reranker (cross-encoder)_ — scores a (query, candidate) pair _together_, far
+  more accurately but slower. Standard RAG upgrade: retrieve top-N with the
+  embedder, then rerank to top-k. A natural M2 enhancement.
+
+**By efficiency technique** (how it's made smaller/cheaper).
+- _Quantised_ — weights at lower precision (8-/4-bit). **The Ollama `:3b` is
+  already quantised** (GGUF) — how a 3B model runs comfortably locally.
+- _Distilled_ — a small "student" trained to mimic a big "teacher" (the README's
+  "distillation toy" stretch goal).
+- _SLM (Small Language Model)_ — deliberately small for on-device/cheap/fast use.
+- _Mixture-of-Experts (MoE)_ — only a fraction of the network activates per
+  token; big-model quality at lower compute per token (Mixtral, DeepSeek-V3).
+
+**By modality.** Text-only LLM, multimodal / vision-language (VLM), embedding,
+image generation (diffusion), speech (ASR/TTS). This platform is text-only today,
+but the swappable backend interfaces leave room to extend.
+
+**By access.** _Open-weight_ (download / run / fine-tune — this whole stack) vs.
+_proprietary / API-only_ (frontier flagships). Determines whether "swap the
+backend" means downloading weights or changing an API client.
+
 ## Embeddings & cosine similarity
 
 **The core bet (distributional hypothesis).** "You shall know a word by the
