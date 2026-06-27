@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,3 +49,25 @@ class RagResponse(BaseModel):
     answer: str
     citations: list[CitationModel]
     metrics: ChatMetrics | None = None
+
+
+class TraceSummaryModel(BaseModel):
+    id: str
+    route: str
+    duration_ms: float
+    created_at: float
+    span_count: int
+
+
+class SpanModel(BaseModel):
+    name: str
+    duration_ms: float
+    metadata: dict[str, Any]
+
+
+class TraceDetailModel(BaseModel):
+    id: str
+    route: str
+    duration_ms: float
+    created_at: float
+    spans: list[SpanModel]

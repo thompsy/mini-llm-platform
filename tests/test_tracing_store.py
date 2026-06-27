@@ -80,3 +80,54 @@ def test_save_trace_without_spans(tmp_path: Path) -> None:
         conn.close()
 
     assert count == 1
+
+
+def test_get_trace_round_trip(tmp_path: Path) -> None:
+    store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
+    trace = _make_trace()
+    store.save(trace)
+
+    fetched = store.get_trace(trace.id)
+    store.close()
+
+    assert fetched is not None
+    assert fetched.id == trace.id
+    assert fetched.route == "/rag"
+    assert [s.name for s in fetched.spans] == ["embed_query", "chat"]
+    assert fetched.spans[0].metadata == {"model": "e"}
+    assert fetched.spans[1].metadata == {"output_tokens": 7}
+
+
+def test_get_trace_returns_none_when_missing(tmp_path: Path) -> None:
+    store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
+    assert store.get_trace("does-not-exist") is None
+    store.close()
+
+
+def test_list_traces_newest_first_with_span_count(tmp_path: Path) -> None:
+    store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
+    older = _make_trace()  # 2 spans
+    newer = Trace(route="/chat")
+    newer.start_span("chat").finish()  # 1 span
+    newer.finish()
+    store.save(older)
+    store.save(newer)
+
+    summaries = store.list_traces(limit=10)
+    store.close()
+
+    # Newest first; created_at is stamped at save time, so newer saved last.
+    assert [s.id for s in summaries] == [newer.id, older.id]
+    assert summaries[0].span_count == 1
+    assert summaries[1].span_count == 2
+
+
+def test_list_traces_respects_limit(tmp_path: Path) -> None:
+    store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
+    for _ in range(3):
+        store.save(_make_trace())
+
+    summaries = store.list_traces(limit=2)
+    store.close()
+
+    assert len(summaries) == 2

@@ -3,10 +3,12 @@ EMBED_MODEL ?= nomic-embed-text
 PORT ?= 8000
 PROMPT ?= Hello!
 DATA ?= data
+LIMIT ?= 20
+ID ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest traces trace clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -118,6 +120,21 @@ rag-once: ## Start API, send one /rag, then stop it (PROMPT="..."); run `make in
 
 ingest: ## Ingest documents into the RAG store (DATA=data)
 	uv run python -m app.rag.ingest $(DATA)
+
+traces: ## List recent traces (LIMIT=20 PORT=8000); run the API first with 'make run'
+	@curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { \
+		echo "API not running on port $(PORT). Start it in another terminal with 'make run'."; \
+		exit 1; \
+	}
+	@curl -s "http://localhost:$(PORT)/traces?limit=$(LIMIT)" | jq .
+
+trace: ## Show one trace and its spans (ID=<trace_id> PORT=8000); get an id from 'make traces'
+	@test -n "$(ID)" || { echo "Usage: make trace ID=<trace_id>  (list ids with 'make traces')"; exit 1; }
+	@curl -sf http://localhost:$(PORT)/health > /dev/null 2>&1 || { \
+		echo "API not running on port $(PORT). Start it in another terminal with 'make run'."; \
+		exit 1; \
+	}
+	@curl -s "http://localhost:$(PORT)/traces/$(ID)" | jq .
 
 clean: ## Remove caches
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

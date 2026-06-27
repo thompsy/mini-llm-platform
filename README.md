@@ -6,7 +6,7 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 
 - [x] **M1 — Inference API.** Typed FastAPI `/chat` endpoint (request → response) wrapping a local model via Ollama; pydantic schemas; capture request latency; tests with the model client mocked.
 - [x] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (Chroma); retrieve top-k; answer grounded with citations.
-- [ ] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency, cost) to SQLite; inspectable traces.
+- [x] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency) to SQLite; inspectable traces via `/traces`.
 - [ ] **M4 — Eval harness.** Golden Q&A set; score with exact-match + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
 - [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; reasoning agent with tool use (ReAct + function calling); distillation toy; full `docker-compose` (app + Postgres/pgvector).
 
@@ -161,7 +161,33 @@ RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`
 | `APP_RAG_MIN_SCORE`    | `0.5`              | drop retrieved chunks below this score     |
 | `APP_CHUNK_SIZE`       | `200`              | max words per chunk                        |
 | `APP_CHUNK_OVERLAP`    | `40`               | words shared between adjacent chunks        |
+| `APP_TRACE_STORE_PATH` | `traces.db`        | SQLite file where request traces are stored |
 | `APP_LOG_LEVEL`        | `INFO`             | logging level (`DEBUG` for per-chunk logs) |
+
+## Tracing (M3)
+
+Every `/chat` and `/rag` request is recorded as a **trace**: a timed tree of
+**spans** (one per embed / retrieve / chat step), with metadata like the model
+used and output tokens. A middleware opens a trace per request, and the
+instrumented pipeline records spans into it via a `ContextVar` — so the code
+doing the work never has to pass a trace around. Finished traces are persisted to
+SQLite (`traces.db` by default; see `APP_TRACE_STORE_PATH`), including requests
+that fail mid-flight.
+
+Inspect them with the API running (`make run` in another terminal):
+
+```bash
+make traces                 # list recent traces (LIMIT=20 by default)
+make traces LIMIT=50        # show more
+make trace ID=<trace_id>    # one trace with its spans (get an id from `make traces`)
+```
+
+Or via raw HTTP:
+
+```bash
+curl 'http://127.0.0.1:8000/traces?limit=20'   # newest first; id, route, duration, span_count
+curl http://127.0.0.1:8000/traces/<trace_id>   # full detail incl. each span + metadata
+```
 
 ## Project structure
 
@@ -170,9 +196,11 @@ RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`
 ├── src/app/
 │   ├── main.py              # FastAPI app + lifespan + entry point
 │   ├── config.py            # settings (pydantic-settings)
-│   ├── models.py            # request/response schemas (chat + rag)
+│   ├── models.py            # request/response schemas (chat + rag + traces)
 │   ├── logging_config.py    # central logging setup
-│   ├── api/routes.py        # /chat, /rag, /health endpoints
+│   ├── tracing.py           # Trace/Span core + per-request ContextVar
+│   ├── tracing_store.py     # SQLite trace store (TraceStore protocol)
+│   ├── api/routes.py        # /chat, /rag, /health, /traces endpoints
 │   ├── llm/
 │   │   ├── client.py        # async Ollama chat client
 │   │   └── embeddings.py    # async Ollama embeddings client
@@ -183,7 +211,7 @@ RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`
 │       └── pipeline.py      # query-time RAG (retrieve + ground + cite)
 ├── data/                    # sample corpus (.md)
 ├── tests/                   # pytest suite
-├── Makefile                 # setup/lint/test/run/chat/ingest/rag targets
+├── Makefile                 # setup/lint/test/run/chat/ingest/rag/traces targets
 ├── concepts.md              # notes on the ideas behind the project
 ├── pyproject.toml           # deps + ruff/mypy config
 ├── .pre-commit-config.yaml

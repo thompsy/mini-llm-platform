@@ -14,10 +14,14 @@ from app.models import (
     CitationModel,
     RagRequest,
     RagResponse,
+    SpanModel,
+    TraceDetailModel,
+    TraceSummaryModel,
 )
 from app.rag.pipeline import answer_question
 from app.rag.store import ChromaStore
 from app.tracing import record_span
+from app.tracing_store import SQLiteTraceStore
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,11 @@ def get_embedder(request: Request) -> OllamaEmbedder:
 def get_store(request: Request) -> ChromaStore:
     store: ChromaStore = request.app.state.store
     return store
+
+
+def get_trace_store(request: Request) -> SQLiteTraceStore:
+    trace_store: SQLiteTraceStore = request.app.state.trace_store
+    return trace_store
 
 
 @router.get("/health")
@@ -149,4 +158,45 @@ async def rag(
         metrics=ChatMetrics(
             total_seconds=total_seconds, output_tokens=result.output_tokens
         ),
+    )
+
+
+@router.get("/traces", response_model=list[TraceSummaryModel])
+async def list_traces(
+    trace_store: Annotated[SQLiteTraceStore, Depends(get_trace_store)],
+    limit: int = 50,
+) -> list[TraceSummaryModel]:
+    summaries = trace_store.list_traces(limit=limit)
+    return [
+        TraceSummaryModel(
+            id=s.id,
+            route=s.route,
+            duration_ms=s.duration_ms,
+            created_at=s.created_at,
+            span_count=s.span_count,
+        )
+        for s in summaries
+    ]
+
+
+@router.get("/traces/{trace_id}", response_model=TraceDetailModel)
+async def get_trace(
+    trace_id: str,
+    trace_store: Annotated[SQLiteTraceStore, Depends(get_trace_store)],
+) -> TraceDetailModel:
+    trace = trace_store.get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"trace {trace_id!r} not found",
+        )
+    return TraceDetailModel(
+        id=trace.id,
+        route=trace.route,
+        duration_ms=trace.duration_ms,
+        created_at=trace.created_at,
+        spans=[
+            SpanModel(name=sp.name, duration_ms=sp.duration_ms, metadata=sp.metadata)
+            for sp in trace.spans
+        ],
     )

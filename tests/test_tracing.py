@@ -223,3 +223,38 @@ def test_middleware_persists_trace(tmp_path) -> None:
 
     assert routes == [("/chat",)]
     assert span_names == [("chat",)]
+
+
+def _seed_trace(store: SQLiteTraceStore) -> Trace:
+    trace = Trace(route="/rag")
+    span = trace.start_span("chat")
+    span.metadata["output_tokens"] = 7
+    span.finish()
+    trace.finish()
+    store.save(trace)
+    return trace
+
+
+def test_traces_endpoints_list_and_detail(tmp_path) -> None:
+    store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
+    trace = _seed_trace(store)
+
+    with TestClient(app) as client:
+        app.state.trace_store = store
+        list_resp = client.get("/traces")
+        detail_resp = client.get(f"/traces/{trace.id}")
+        missing_resp = client.get("/traces/nope")
+
+    assert list_resp.status_code == 200
+    summaries = list_resp.json()
+    assert len(summaries) == 1
+    assert summaries[0]["route"] == "/rag"
+    assert summaries[0]["span_count"] == 1
+
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["id"] == trace.id
+    assert detail["spans"][0]["name"] == "chat"
+    assert detail["spans"][0]["metadata"]["output_tokens"] == 7
+
+    assert missing_resp.status_code == 404
