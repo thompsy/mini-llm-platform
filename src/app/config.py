@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     chunk_size: int = 200
     chunk_overlap: int = 40
 
+    # Tracing
+    trace_store_path: str = "traces.db"
+
     # Logging
     log_level: str = "INFO"
 

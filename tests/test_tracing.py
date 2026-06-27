@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sqlite3
 
 from fastapi.testclient import TestClient
 
@@ -11,6 +12,7 @@ from app.main import app
 from app.rag.pipeline import answer_question
 from app.rag.store import Retrieved
 from app.tracing import Trace, _current_trace, record_span, start_trace
+from app.tracing_store import SQLiteTraceStore
 
 
 def test_span_duration_while_open():
@@ -189,4 +191,35 @@ def test_middleware_skips_logging_when_no_spans(caplog) -> None:
         main_logger.removeHandler(caplog.handler)
 
     assert resp.status_code == 200
-    assert not any("trace " in r.message for r in caplog.records)
+    # The per-request trace log starts with "trace /<route>"; assert none fired
+    # (distinct from the lifespan's "trace store: ..." startup line).
+    assert not any(r.message.startswith("trace /") for r in caplog.records)
+
+
+def test_middleware_persists_trace(tmp_path) -> None:
+    """End-to-end: a request's trace is written to the trace store."""
+    db_path = str(tmp_path / "traces.db")
+    store = SQLiteTraceStore(path=db_path)
+    app.dependency_overrides[get_client] = lambda: _FakeChat()
+    try:
+        with TestClient(app) as client:
+            # Replace the store the lifespan opened with our temp one; the
+            # middleware reads request.app.state.trace_store per request.
+            app.state.trace_store = store
+            resp = client.post(
+                "/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+
+    conn = sqlite3.connect(db_path)
+    try:
+        routes = conn.execute("SELECT route FROM traces").fetchall()
+        span_names = conn.execute("SELECT name FROM spans").fetchall()
+    finally:
+        conn.close()
+
+    assert routes == [("/chat",)]
+    assert span_names == [("chat",)]

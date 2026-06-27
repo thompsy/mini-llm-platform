@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Generator
+from uuid import uuid4
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Span:
 @dataclass
 class Trace:
     route: str
+    id: str = field(default_factory=lambda: uuid4().hex)
     started_at: float = field(default_factory=monotonic)
     finished_at: float | None = None
     spans: list[Span] = field(default_factory=list)
