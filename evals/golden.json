@@ -1,0 +1,50 @@
+[
+  {
+    "id": "py-creator",
+    "question": "Who created Python?",
+    "reference_answer": "Guido van Rossum.",
+    "expected_sources": ["data/python.md"]
+  },
+  {
+    "id": "py-released",
+    "question": "When was Python first released?",
+    "reference_answer": "Python was first released in 1991.",
+    "expected_sources": ["data/python.md"]
+  },
+  {
+    "id": "py-name-origin",
+    "question": "What inspired the name Python?",
+    "reference_answer": "The British comedy group Monty Python, not the snake.",
+    "expected_sources": ["data/python.md"]
+  },
+  {
+    "id": "embedding-def",
+    "question": "What is an embedding?",
+    "reference_answer": "A fixed-length vector of numbers that represents the meaning of a piece of text, so text in similar contexts gets similar vectors.",
+    "expected_sources": ["data/embeddings.md"]
+  },
+  {
+    "id": "similarity-metric",
+    "question": "How is similarity between two embeddings usually measured?",
+    "reference_answer": "With cosine similarity, which compares the angle between the vectors rather than their length.",
+    "expected_sources": ["data/embeddings.md"]
+  },
+  {
+    "id": "rag-def",
+    "question": "What is Retrieval-Augmented Generation?",
+    "reference_answer": "A technique where a language model answers using an external document corpus: relevant chunks are retrieved at query time and included in the prompt to ground the answer.",
+    "expected_sources": ["data/rag.md"]
+  },
+  {
+    "id": "rag-hallucination",
+    "question": "Why does RAG reduce hallucination?",
+    "reference_answer": "Because the model is instructed to answer only from the retrieved passages.",
+    "expected_sources": ["data/rag.md"]
+  },
+  {
+    "id": "platform-stack",
+    "question": "What is the tech stack of the Mini LLM Platform?",
+    "reference_answer": "Python, FastAPI, Ollama, and Chroma for vector storage.",
+    "expected_sources": ["data/project.md"]
+  }
+]
