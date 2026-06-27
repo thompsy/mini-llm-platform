@@ -15,7 +15,8 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 Ideas to extend this project and deepen understanding — roughly easiest to hardest.
 
 > See [`concepts.md`](concepts.md) for running notes on the ideas behind this
-> project (embeddings, cosine similarity, and more).
+> project (embeddings, cosine similarity, and more), and
+> [`reading.md`](reading.md) for books on designing these kinds of systems.
 
 ### Build your own models
 
