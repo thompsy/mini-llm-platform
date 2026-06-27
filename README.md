@@ -8,7 +8,8 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 - [x] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (Chroma); retrieve top-k; answer grounded with citations.
 - [x] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency) to SQLite; inspectable traces via `/traces`.
 - [x] **M4 — Eval harness.** Golden Q&A set; score with exact-match + recall@k + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
-- [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; reasoning agent with tool use (ReAct + function calling); distillation toy; full `docker-compose` (app + Postgres/pgvector).
+- [ ] **M5 — Agent.** Text-based ReAct loop (Thought → Action → Observation) with tool use over the existing corpus; `/agent` endpoint + CLI; each step/tool traced (M3) and scoreable (M4). See [Agent (M5 — planned)](#agent-m5--planned).
+- [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; native tool-calling (vs text ReAct); distillation toy; full `docker-compose` (app + Postgres/pgvector).
 
 ## Follow-up concepts & projects
 
@@ -223,6 +224,62 @@ make eval GOLDEN=path/to/golden.json        # use a different golden set
 `APP_EVAL_REGRESSION_THRESHOLD` below the baseline — usable as a CI gate. Note
 the judge is an LLM and so non-deterministic run-to-run; trust aggregate trends
 over any single number, and grow the golden set as the corpus grows.
+
+## Agent (M5 — planned)
+
+> **Status: planned, not yet built.** This section is the design; the milestone
+> is tracked in the roadmap above.
+
+An agent answers a question by **reasoning and acting in a loop** rather than in
+a single shot: it thinks, picks a tool, observes the result, and repeats until it
+can answer. M5 adds a **text-based [ReAct](https://arxiv.org/abs/2210.03629)**
+(Reason + Act) agent over the existing document corpus.
+
+### The loop
+
+The model emits `Thought → Action → Action Input`; the runner executes the named
+tool and appends an `Observation`; the (growing) transcript is resent each turn
+until the model emits a `Final Answer` or a step cap is hit:
+
+```
+Thought: I should look this up in the documents.
+Action: rag_search
+Action Input: who created Python?
+Observation: Guido van Rossum created Python. [data/python.md]
+Thought: I have the answer.
+Final Answer: Python was created by Guido van Rossum.
+```
+
+### Tools (general-purpose, domain-neutral)
+
+- **`rag_search`** — the existing retrieval + grounding pipeline; the agent's main tool.
+- **`calculator`** — safe arithmetic (AST-parsed, not `eval`).
+- **`get_date`** — the current date.
+
+### Design
+
+- New package `src/app/agent/`: `tools.py` (a `Tool` protocol + the three tools),
+  `react.py` (pure prompt builder + step parser), `runner.py` (`run_agent` loop),
+  and a `__main__.py` CLI. A `POST /agent` endpoint and `make agent` mirror the
+  existing `/rag` surface.
+- **Action mechanism:** text-based ReAct parsed with a forgiving parser
+  (case-insensitive, ignores hallucinated observations; an unparseable reply gets
+  a format-reminder observation rather than crashing). Chosen for being
+  backend-agnostic and for teaching structured-output parsing; native
+  tool-calling is a later stretch. Small local models adhere to the format
+  imperfectly — mitigated with few tools, a low step cap, and `temperature=0`.
+- **Tracing (M3):** each iteration is an `agent_step` span and each tool call a
+  `tool:<name>` span, so an `/agent` trace shows the whole reasoning tree
+  (including the RAG pipeline's own nested spans) via `make traces`.
+- **Eval (M4):** the harness can route golden questions through the agent instead
+  of plain RAG, scoring with the same metrics plus agent signals (e.g. step count).
+
+### Phasing
+
+1. **M5.1** — tool layer (`Tool` protocol + the three tools) + tests.
+2. **M5.2** — ReAct prompt + parser + `run_agent` loop + per-step tracing + tests.
+3. **M5.3** — `/agent` endpoint + CLI + `make agent` + tests.
+4. **M5.4** — eval-the-agent integration + docs.
 
 ## Project structure
 
