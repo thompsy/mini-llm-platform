@@ -90,6 +90,62 @@ but the swappable backend interfaces leave room to extend.
 _proprietary / API-only_ (frontier flagships). Determines whether "swap the
 backend" means downloading weights or changing an API client.
 
+## Training vs. inference, and the two freshness levers
+
+The whole distinction hinges on one question: **do the model's weights change?**
+A model _is_ its weights (billions of learned numbers); everything it "knows" is
+baked into them.
+
+- **Training (incl. retraining / fine-tuning)** — the process that **updates the
+  weights**: show data, predict, measure error, nudge every weight to reduce it
+  (backprop + gradient descent). Expensive, slow, batched, GPU-heavy; the output
+  is a _new set of weights_.
+- **Inference** — **running the frozen model**: a forward pass over a prompt to
+  produce tokens. Weights don't change. Cheaper, fast, per-request. **All this
+  project does** (via Ollama).
+
+Analogy: training is _studying for the exam_; inference is _taking the exam_ —
+your knowledge doesn't change during it, but you may bring notes, and the notes
+change your answers.
+
+**Two ways to keep things fresh** (genuinely different levers):
+
+1. _Parametric_ — **update the weights** (training/retraining). Bake new
+   knowledge into the model. Variants cheapest→deepest: fine-tuning / LoRA →
+   continued pretraining → full retrain. Knowledge becomes intrinsic.
+2. _Non-parametric_ — **update the input at inference** (RAG, tool use, pasting
+   fresh data into the prompt). Weights stay frozen; the model _conditions on_
+   new info but doesn't learn it — forgotten when the request ends. **RAG (M2)
+   is exactly this.**
+
+So strictly: inference doesn't keep the _model_ fresh — it keeps the _system's
+answers_ fresh by feeding a frozen model fresh context each time.
+
+| | Retrain / fine-tune (weights) | RAG / context (inference) |
+| --- | --- | --- |
+| What changes | Model weights | Prompt only; model frozen |
+| Knowledge lives in | Parameters (intrinsic) | External store, per query |
+| Time to add info | Hours–days | Seconds (re-index) |
+| Cost | High (GPUs, pipeline) | Low (embed + DB write) |
+| Update/remove one fact | Hard (retrain) | Trivial (edit/delete doc) |
+| Source attribution | None (absorbed) | Easy (cite the chunk) |
+| Risk | Catastrophic forgetting, drift | Bigger prompts, retrieval errors |
+| Best for | Behaviour/style, deep skill, latency | Fast-changing facts, provenance |
+
+**Rule of thumb.** Fast-changing facts → RAG (don't retrain for these). Behaviour
+/ tone / format / a stable specialised skill → fine-tune. In practice, both:
+fine-tune for _how_ the model behaves, RAG for _what_ it currently knows.
+
+**Caveat.** "In-context learning" (the model "learned from my prompt") is **not
+training** — no weights change; it just conditions on the context and forgets
+after the response. A frequent source of confusion because it _feels_ like
+learning.
+
+**In this project.** Inference-only; freshness comes from RAG — re-run
+`make ingest` when `data/` changes and answers update instantly, no retraining.
+The "build your own models" and "distillation" stretch goals are the _training_
+side.
+
 ## Embeddings & cosine similarity
 
 **The core bet (distributional hypothesis).** "You shall know a word by the
