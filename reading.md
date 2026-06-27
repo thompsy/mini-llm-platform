@@ -42,7 +42,30 @@ models from scratch. Roughly ordered by how directly they map to this repo.
   (M3), the vector store, persistence, reliability. (A 2nd edition has been in
   the works — check status.)
 
+## Foundations — neural nets & deep learning
+
+A layer *below* everything above. The books in the earlier sections treat the
+model as a capable black box and assume backprop / gradient descent / training
+dynamics rather than teaching them. **These are not required for the core
+milestones (M1–M4)** — you consume the model through an interface there — but
+they're a **prerequisite for the "build your own models" stretch goal**, where
+Raschka's from-scratch book assumes you already know NN basics and some PyTorch.
+Ordered easiest → most rigorous.
+
+- **Michael Nielsen — _Neural Networks and Deep Learning_** (free online). The
+  clearest gentle intro to backprop and gradient descent.
+- **Andrej Karpathy — "Neural Networks: Zero to Hero"** (free video series, not
+  a book; builds up to a GPT). The best bridge from fundamentals _to_ Raschka,
+  and it dovetails with the stretch goal.
+- **François Chollet — _Deep Learning with Python_ (2nd ed).** Excellent
+  practical intuition, Keras-based.
+- **Simon Prince — _Understanding Deep Learning_** (free PDF, 2023). Modern,
+  well-illustrated, covers transformers too — a strong middle ground.
+- **Goodfellow, Bengio & Courville — _Deep Learning_** (free online). The theory
+  reference; math-heavy — use as a lookup, not a first read.
+
 ---
 
 **If you read one:** Huyen's _AI Engineering_ (covers RAG + eval + observability,
-i.e. M2–M4). Then Raschka when starting the from-scratch models.
+i.e. M2–M4). Then, for the stretch goal, Nielsen or Karpathy for fundamentals
+before Raschka's from-scratch build.
