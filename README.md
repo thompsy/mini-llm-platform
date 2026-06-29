@@ -8,7 +8,7 @@ A small, self-hosted LLM learning project — built to sharpen Python and build 
 - [x] **M2 — RAG.** Ingest + chunk + embed a document corpus; store vectors (Chroma); retrieve top-k; answer grounded with citations.
 - [x] **M3 — Tracing.** Record each LLM + retrieval call as a span (tokens, latency) to SQLite; inspectable traces via `/traces`.
 - [x] **M4 — Eval harness.** Golden Q&A set; score with exact-match + recall@k + LLM-as-judge; CLI + report; flag regressions across prompt/model changes.
-- [ ] **M5 — Agent.** Text-based ReAct loop (Thought → Action → Observation) with tool use over the existing corpus; `/agent` endpoint + CLI; each step/tool traced (M3) and scoreable (M4). See [Agent (M5 — planned)](#agent-m5--planned).
+- [x] **M5 — Agent.** Text-based ReAct loop (Thought → Action → Observation) with tool use over the existing corpus; `/agent` endpoint + CLI; each step/tool traced (M3) and scoreable (M4). See [Agent (M5)](#agent-m5).
 - [ ] **Stretch.** Streaming responses (SSE) + TTFT metric; native tool-calling (vs text ReAct); distillation toy; full `docker-compose` (app + Postgres/pgvector).
 
 ## Follow-up concepts & projects
@@ -165,6 +165,7 @@ RAG and logging settings (prefixed `APP_`, set via `.env` — see `.env.example`
 | `APP_TRACE_STORE_PATH` | `traces.db`        | SQLite file where request traces are stored |
 | `APP_JUDGE_MODEL`      | `model`            | model used by the LLM-as-judge (defaults to chat model) |
 | `APP_EVAL_REGRESSION_THRESHOLD` | `0.05`    | min mean-score drop vs baseline to flag a regression |
+| `APP_AGENT_MAX_STEPS`  | `5`                | max reason/act iterations before the agent gives up |
 | `APP_LOG_LEVEL`        | `INFO`             | logging level (`DEBUG` for per-chunk logs) |
 
 ## Tracing (M3)
@@ -225,17 +226,12 @@ make eval GOLDEN=path/to/golden.json        # use a different golden set
 the judge is an LLM and so non-deterministic run-to-run; trust aggregate trends
 over any single number, and grow the golden set as the corpus grows.
 
-## Agent (M5 — planned)
-
-> **Status: planned, not yet built.** This section is the design; the milestone
-> is tracked in the roadmap above.
+## Agent (M5)
 
 An agent answers a question by **reasoning and acting in a loop** rather than in
 a single shot: it thinks, picks a tool, observes the result, and repeats until it
-can answer. M5 adds a **text-based [ReAct](https://arxiv.org/abs/2210.03629)**
+can answer. This is a **text-based [ReAct](https://arxiv.org/abs/2210.03629)**
 (Reason + Act) agent over the existing document corpus.
-
-### The loop
 
 The model emits `Thought → Action → Action Input`; the runner executes the named
 tool and appends an `Observation`; the (growing) transcript is resent each turn
@@ -245,41 +241,47 @@ until the model emits a `Final Answer` or a step cap is hit:
 Thought: I should look this up in the documents.
 Action: rag_search
 Action Input: who created Python?
-Observation: Guido van Rossum created Python. [data/python.md]
+Observation: Guido van Rossum created Python. (sources: data/python.md)
 Thought: I have the answer.
 Final Answer: Python was created by Guido van Rossum.
 ```
 
-### Tools (general-purpose, domain-neutral)
+Tools available to the agent (general-purpose, domain-neutral):
 
 - **`rag_search`** — the existing retrieval + grounding pipeline; the agent's main tool.
 - **`calculator`** — safe arithmetic (AST-parsed, not `eval`).
 - **`get_date`** — the current date.
 
-### Design
+> Needs Ollama running and an ingested corpus (`make ingest`).
 
-- New package `src/app/agent/`: `tools.py` (a `Tool` protocol + the three tools),
+```bash
+make agent PROMPT="Who created Python, and what is 1991 plus 34?"
+make agent PROMPT="…" MAX_STEPS=8        # raise the step cap
+
+# or raw HTTP (the API running):
+curl http://127.0.0.1:8000/agent \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Who created Python?"}'   # returns answer + step-by-step trace
+```
+
+Notes on the design:
+
+- **Package `src/app/agent/`:** `tools.py` (`Tool` protocol + the three tools),
   `react.py` (pure prompt builder + step parser), `runner.py` (`run_agent` loop),
-  and a `__main__.py` CLI. A `POST /agent` endpoint and `make agent` mirror the
-  existing `/rag` surface.
-- **Action mechanism:** text-based ReAct parsed with a forgiving parser
-  (case-insensitive, ignores hallucinated observations; an unparseable reply gets
-  a format-reminder observation rather than crashing). Chosen for being
-  backend-agnostic and for teaching structured-output parsing; native
-  tool-calling is a later stretch. Small local models adhere to the format
+  `__main__.py` (CLI). `POST /agent` and `make agent` mirror the `/rag` surface.
+- **Action mechanism:** text-based ReAct with a forgiving parser
+  (case-insensitive; ignores a hallucinated `Observation:`; strips quotes models
+  wrap around tool inputs; an unparseable reply gets a format-reminder
+  observation rather than crashing). Chosen for being backend-agnostic; native
+  tool-calling is a later stretch. Small local models follow the format
   imperfectly — mitigated with few tools, a low step cap, and `temperature=0`.
 - **Tracing (M3):** each iteration is an `agent_step` span and each tool call a
-  `tool:<name>` span, so an `/agent` trace shows the whole reasoning tree
+  `tool:<name>` span, so an `/agent` trace shows the whole reasoning path
   (including the RAG pipeline's own nested spans) via `make traces`.
-- **Eval (M4):** the harness can route golden questions through the agent instead
-  of plain RAG, scoring with the same metrics plus agent signals (e.g. step count).
-
-### Phasing
-
-1. **M5.1** — tool layer (`Tool` protocol + the three tools) + tests.
-2. **M5.2** — ReAct prompt + parser + `run_agent` loop + per-step tracing + tests.
-3. **M5.3** — `/agent` endpoint + CLI + `make agent` + tests.
-4. **M5.4** — eval-the-agent integration + docs.
+- **Eval (M4):** `make eval AGENT=1` routes the golden set through the agent
+  instead of plain RAG, scoring answer quality (exact-match + judge) plus a step
+  count. `recall@k` is RAG-only — in agent mode retrieval is the agent's own
+  decision, not a discrete step.
 
 ## Project structure
 
@@ -292,7 +294,7 @@ Final Answer: Python was created by Guido van Rossum.
 │   ├── logging_config.py    # central logging setup
 │   ├── tracing.py           # Trace/Span core + per-request ContextVar
 │   ├── tracing_store.py     # SQLite trace store (TraceStore protocol)
-│   ├── api/routes.py        # /chat, /rag, /health, /traces endpoints
+│   ├── api/routes.py        # /chat, /rag, /health, /traces, /agent endpoints
 │   ├── llm/
 │   │   ├── client.py        # async Ollama chat client
 │   │   └── embeddings.py    # async Ollama embeddings client
@@ -301,16 +303,21 @@ Final Answer: Python was created by Guido van Rossum.
 │   │   ├── store.py         # Chroma vector store (VectorStore protocol)
 │   │   ├── ingest.py        # offline ingest CLI
 │   │   └── pipeline.py      # query-time RAG (retrieve + ground + cite)
-│   └── evals/
-│       ├── dataset.py       # load/validate the golden set
-│       ├── scorers.py       # exact-match, recall@k, LLM-as-judge
-│       ├── runner.py        # run golden set through RAG + score (traced)
-│       ├── report.py        # console table, JSON I/O, baseline comparison
-│       └── __main__.py      # eval CLI (python -m app.evals)
+│   ├── evals/
+│   │   ├── dataset.py       # load/validate the golden set
+│   │   ├── scorers.py       # exact-match, recall@k, LLM-as-judge
+│   │   ├── runner.py        # run golden set through an answer fn + score (traced)
+│   │   ├── report.py        # console table, JSON I/O, baseline comparison
+│   │   └── __main__.py      # eval CLI (python -m app.evals)
+│   └── agent/
+│       ├── tools.py         # Tool protocol + rag_search, calculator, get_date
+│       ├── react.py         # ReAct prompt + output parser (pure)
+│       ├── runner.py        # run_agent loop (per-step + per-tool spans)
+│       └── __main__.py      # agent CLI (python -m app.agent)
 ├── data/                    # sample corpus (.md)
 ├── evals/golden.json        # golden Q&A set for the eval harness
 ├── tests/                   # pytest suite
-├── Makefile                 # setup/lint/test/run/chat/ingest/rag/traces/eval targets
+├── Makefile                 # setup/lint/test/run/chat/ingest/rag/traces/eval/agent targets
 ├── concepts.md              # notes on the ideas behind the project
 ├── pyproject.toml           # deps + ruff/mypy config
 ├── .pre-commit-config.yaml

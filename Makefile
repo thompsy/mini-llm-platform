@@ -8,6 +8,7 @@ ID ?=
 GOLDEN ?= evals/golden.json
 BASELINE ?=
 OUTPUT ?=
+AGENT ?=
 MAX_STEPS ?=
 
 .DEFAULT_GOAL := help
@@ -140,8 +141,8 @@ trace: ## Show one trace and its spans (ID=<trace_id> PORT=8000); get an id from
 	}
 	@curl -s "http://localhost:$(PORT)/traces/$(ID)" | jq .
 
-eval: ## Run the eval harness over the golden set (GOLDEN=… OUTPUT=… BASELINE=…); needs Ollama + `make ingest`
-	uv run python -m app.evals $(GOLDEN) $(if $(OUTPUT),--output $(OUTPUT)) $(if $(BASELINE),--baseline $(BASELINE))
+eval: ## Run the eval harness (GOLDEN=… OUTPUT=… BASELINE=… AGENT=1); needs Ollama + `make ingest`
+	uv run python -m app.evals $(GOLDEN) $(if $(OUTPUT),--output $(OUTPUT)) $(if $(BASELINE),--baseline $(BASELINE)) $(if $(AGENT),--agent)
 
 agent: ## Ask the ReAct agent a question (PROMPT="…" MAX_STEPS=…); needs Ollama + `make ingest`
 	uv run python -m app.agent "$(PROMPT)" $(if $(MAX_STEPS),--max-steps $(MAX_STEPS))

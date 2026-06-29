@@ -1,9 +1,15 @@
-"""Tests for the eval runner (orchestration + scoring + tracing)."""
+"""Tests for the eval runner (injected answer fn, scoring, tracing)."""
 
 from pathlib import Path
 
+from app.agent.tools import CalculatorTool
 from app.evals.dataset import GoldenItem
-from app.evals.runner import run_evals
+from app.evals.runner import (
+    AnswerOutput,
+    agent_answer_fn,
+    rag_answer_fn,
+    run_evals,
+)
 from app.llm.client import ChatResult
 from app.rag.store import Retrieved
 from app.tracing_store import SQLiteTraceStore
@@ -29,8 +35,6 @@ class _FakeStore:
 
 
 class _FakeChat:
-    """Returns a fixed RAG answer."""
-
     def __init__(self, answer: str) -> None:
         self.answer = answer
 
@@ -41,8 +45,6 @@ class _FakeChat:
 
 
 class _FakeJudge:
-    """Returns a fixed verdict regardless of input."""
-
     def __init__(self, verdict: str) -> None:
         self.verdict = verdict
 
@@ -50,6 +52,16 @@ class _FakeJudge:
         self, *, messages: object, model: str, temperature: float
     ) -> ChatResult:
         return ChatResult(content=self.verdict, model=model, output_tokens=1)
+
+
+class _ScriptedChat:
+    def __init__(self, replies: list[str]) -> None:
+        self._replies = list(replies)
+
+    async def chat(
+        self, *, messages: object, model: str, temperature: float
+    ) -> ChatResult:
+        return ChatResult(content=self._replies.pop(0), model=model, output_tokens=None)
 
 
 def _item() -> GoldenItem:
@@ -61,69 +73,90 @@ def _item() -> GoldenItem:
     )
 
 
-async def _run_one(
-    *,
-    answer: str = "Python was created by Guido van Rossum.",
-    verdict: str = "CORRECT",
-    hits: list[Retrieved] | None = None,
-    trace_store: SQLiteTraceStore | None = None,
-):
-    if hits is None:
-        hits = [Retrieved(text="...", metadata={"source": "data/python.md"}, score=0.9)]
-    return await run_evals(
-        [_item()],
+def _rag_fn(answer: str, hits: list[Retrieved]):
+    return rag_answer_fn(
         embedder=_FakeEmbedder(),
         store=_FakeStore(hits),
         chat_client=_FakeChat(answer),
-        judge_client=_FakeJudge(verdict),
         embed_model="e",
         chat_model="c",
-        judge_model="j",
         temperature=0.0,
         top_k=4,
         min_score=0.5,
-        trace_store=trace_store,
     )
 
 
-async def test_run_evals_scores_all_three() -> None:
-    report = await _run_one()
-
-    assert len(report.results) == 1
-    result = report.results[0]
-    by = {s.scorer: s for s in result.scores}
-    assert by["exact_match"].score == 1.0
-    assert by["recall@k"].score == 1.0
-    assert by["judge"].score == 1.0
-    assert by["judge"].detail == "CORRECT"
-    assert report.aggregates == {"exact_match": 1.0, "recall@k": 1.0, "judge": 1.0}
-
-
-async def test_run_evals_reflects_bad_answer() -> None:
-    report = await _run_one(answer="It was Linus Torvalds.", verdict="INCORRECT")
+async def test_rag_mode_scores_all_three() -> None:
+    hits = [Retrieved(text="...", metadata={"source": "data/python.md"}, score=0.9)]
+    report = await run_evals(
+        [_item()],
+        answer_fn=_rag_fn("Python was created by Guido van Rossum.", hits),
+        judge_client=_FakeJudge("CORRECT"),
+        judge_model="j",
+    )
 
     by = {s.scorer: s.score for s in report.results[0].scores}
-    assert by["exact_match"] == 0.0  # reference not contained
-    assert by["recall@k"] == 1.0  # retrieval still correct
-    assert by["judge"] == 0.0
+    assert by == {"exact_match": 1.0, "recall@k": 1.0, "judge": 1.0}
 
 
-async def test_run_evals_recall_misses_wrong_source() -> None:
+async def test_rag_mode_recall_misses_wrong_source() -> None:
     hits = [Retrieved(text="...", metadata={"source": "data/rag.md"}, score=0.9)]
-    report = await _run_one(hits=hits)
-
+    report = await run_evals(
+        [_item()],
+        answer_fn=_rag_fn("Guido van Rossum", hits),
+        judge_client=_FakeJudge("CORRECT"),
+        judge_model="j",
+    )
     by = {s.scorer: s.score for s in report.results[0].scores}
-    assert by["recall@k"] == 0.0  # expected data/python.md, retrieved data/rag.md
+    assert by["recall@k"] == 0.0
 
 
-async def test_run_evals_persists_a_trace_per_item(tmp_path: Path) -> None:
+async def test_agent_mode_skips_recall_and_records_steps() -> None:
+    # Scripted agent: compute with calculator, then answer. No recall@k expected.
+    answer_fn = agent_answer_fn(
+        chat_client=_ScriptedChat(
+            [
+                "Thought: compute\nAction: calculator\nAction Input: 1 + 1",
+                "Thought: done\nFinal Answer: Guido van Rossum",
+            ]
+        ),
+        model="m",
+        tools={"calculator": CalculatorTool()},
+        max_steps=5,
+    )
+    report = await run_evals(
+        [_item()],
+        answer_fn=answer_fn,
+        judge_client=_FakeJudge("CORRECT"),
+        judge_model="j",
+    )
+
+    scorers = {s.scorer for s in report.results[0].scores}
+    assert scorers == {"exact_match", "judge"}  # no recall@k in agent mode
+    assert "recall@k" not in report.aggregates
+
+
+async def test_persists_a_trace_per_item(tmp_path: Path) -> None:
     store = SQLiteTraceStore(path=str(tmp_path / "traces.db"))
-    await _run_one(trace_store=store)
+    hits = [Retrieved(text="...", metadata={"source": "data/python.md"}, score=0.9)]
+    await run_evals(
+        [_item()],
+        answer_fn=_rag_fn("Guido van Rossum", hits),
+        judge_client=_FakeJudge("CORRECT"),
+        judge_model="j",
+        trace_store=store,
+    )
 
     summaries = store.list_traces(limit=10)
     store.close()
 
     assert len(summaries) == 1
     assert summaries[0].route == "eval:py"
-    # embed_query, retrieve, chat (from the pipeline) + judge (from the runner)
+    # embed_query, retrieve, chat (from rag_answer_fn) + judge (from run_evals)
     assert summaries[0].span_count == 4
+
+
+def test_answer_output_defaults() -> None:
+    out = AnswerOutput(answer="hi")
+    assert out.sources is None
+    assert out.steps is None

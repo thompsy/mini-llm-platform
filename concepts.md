@@ -187,6 +187,49 @@ with the failures you discover in production (which is where M3 tracing feeds
 back in: observability shows *what* broke, evals check whether a fix actually
 helps before shipping).
 
+## Agents & the ReAct loop
+
+**From one-shot to a loop.** A plain `/chat` or `/rag` call is single-shot: prompt
+in, answer out. An **agent** instead runs in a loop, choosing *actions* (tool
+calls) and observing results before deciding what to do next — so it can break a
+task into steps, fetch what it needs, and combine results. (M5.)
+
+**ReAct (Reason + Act).** The pattern this project uses: the model alternates
+`Thought` (reasoning) → `Action` + `Action Input` (a tool call) → `Observation`
+(the tool's result), repeating until it emits a `Final Answer`. The transcript
+**grows each turn** (we resend Thought/Action/Observation history), which is how
+the model "remembers" what it has already tried — and why an agent's token cost
+and latency climb with the number of steps.
+
+**Tools are the agent's hands.** Each tool has a name + a description; the
+description is part of the prompt, so it's how the model learns *when* to use a
+tool. Here: `rag_search` (the RAG pipeline), `calculator`, `get_date`. Adding a
+capability = adding a tool, not retraining.
+
+**The hard part: structured output from a small model.** ReAct depends on the
+model emitting a parseable format, and small local models (e.g. a 3B) follow it
+imperfectly. Robustness measures that matter in practice (all in `app.agent`):
+forgiving, case-insensitive parsing; ignoring an `Observation:` the model
+hallucinates; stripping quotes the model wraps around tool inputs (`'2 + 4'`);
+returning a *recoverable* observation (a format reminder, or "unknown tool: …")
+instead of crashing; `temperature=0`; few tools; and a low **step cap** so a
+confused agent fails bounded rather than looping forever. (Production systems
+often sidestep the parsing entirely with native *tool/function calling*, where
+the model returns a structured call — more robust, but backend-specific.)
+
+**Observability matters more, not less.** With multiple steps and nested tool
+calls, "why did it answer that?" is only answerable if you can see the path. M3
+tracing gives one span per step (`agent_step`) and per tool (`tool:<name>`), with
+the RAG pipeline's own spans nested under `rag_search` — the whole reasoning
+trace, inspectable after the fact.
+
+**Evaluating an agent ≠ evaluating a pipeline.** Answer-quality scorers
+(exact-match, LLM-judge) transfer directly. But `recall@k` doesn't: in a pipeline
+retrieval is one discrete step, whereas an agent *decides* whether and how often
+to retrieve — answering correctly without retrieving isn't a retrieval failure.
+So for agents we lean on answer quality plus operational signals like **step
+count** (did it one-shot it or flail?), and accept more run-to-run variance.
+
 ## Embeddings & cosine similarity
 
 **The core bet (distributional hypothesis).** "You shall know a word by the

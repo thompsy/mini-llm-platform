@@ -2,6 +2,7 @@
 
     uv run python -m app.evals                       # default evals/golden.json
     uv run python -m app.evals path/to/golden.json
+    uv run python -m app.evals --agent               # score the ReAct agent
     uv run python -m app.evals --output report.json  # save a report
     uv run python -m app.evals --baseline report.json  # flag regressions
 
@@ -16,6 +17,7 @@ import logging
 import sys
 from pathlib import Path
 
+from app.agent.tools import build_tools
 from app.config import get_settings
 from app.evals.dataset import GoldenSetError, load_golden_set
 from app.evals.report import (
@@ -24,7 +26,7 @@ from app.evals.report import (
     render_console,
     write_report,
 )
-from app.evals.runner import run_evals
+from app.evals.runner import AnswerFn, agent_answer_fn, rag_answer_fn, run_evals
 from app.llm.client import OllamaClient
 from app.llm.embeddings import OllamaEmbedder
 from app.logging_config import setup_logging
@@ -34,7 +36,9 @@ from app.tracing_store import SQLiteTraceStore
 logger = logging.getLogger(__name__)
 
 
-async def _run(golden_path: Path, output: Path | None, baseline: Path | None) -> int:
+async def _run(
+    golden_path: Path, output: Path | None, baseline: Path | None, use_agent: bool
+) -> int:
     settings = get_settings()
     items = load_golden_set(golden_path)
 
@@ -48,19 +52,43 @@ async def _run(golden_path: Path, output: Path | None, baseline: Path | None) ->
     trace_store = SQLiteTraceStore(path=settings.trace_store_path)
     judge_model = settings.judge_model or settings.model
 
-    try:
-        report = await run_evals(
-            items,
+    answer_fn: AnswerFn
+    if use_agent:
+        tools = build_tools(
             embedder=embedder,
             store=store,
             chat_client=client,
-            judge_client=client,
             embed_model=settings.embed_model,
             chat_model=settings.model,
-            judge_model=judge_model,
             temperature=settings.default_temperature,
             top_k=settings.rag_top_k,
             min_score=settings.rag_min_score,
+        )
+        answer_fn = agent_answer_fn(
+            chat_client=client,
+            model=settings.model,
+            tools=tools,
+            max_steps=settings.agent_max_steps,
+        )
+        logger.info("evaluating the agent (max_steps=%d)", settings.agent_max_steps)
+    else:
+        answer_fn = rag_answer_fn(
+            embedder=embedder,
+            store=store,
+            chat_client=client,
+            embed_model=settings.embed_model,
+            chat_model=settings.model,
+            temperature=settings.default_temperature,
+            top_k=settings.rag_top_k,
+            min_score=settings.rag_min_score,
+        )
+
+    try:
+        report = await run_evals(
+            items,
+            answer_fn=answer_fn,
+            judge_client=client,
+            judge_model=judge_model,
             trace_store=trace_store,
         )
     finally:
@@ -107,6 +135,11 @@ def _main() -> None:
         help="Compare against this report and flag regressions.",
     )
     parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Score the ReAct agent instead of the plain RAG pipeline.",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable DEBUG logging."
     )
     args = parser.parse_args()
@@ -114,7 +147,9 @@ def _main() -> None:
     setup_logging("DEBUG" if args.verbose else get_settings().log_level)
 
     try:
-        exit_code = asyncio.run(_run(args.golden, args.output, args.baseline))
+        exit_code = asyncio.run(
+            _run(args.golden, args.output, args.baseline, args.agent)
+        )
     except GoldenSetError as exc:
         logger.error("%s", exc)
         sys.exit(2)
