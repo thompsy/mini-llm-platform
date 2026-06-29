@@ -8,10 +8,11 @@ ID ?=
 GOLDEN ?= evals/golden.json
 BASELINE ?=
 OUTPUT ?=
+MAX_STEPS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest traces trace eval clean
+.PHONY: help setup install-ollama check lint format typecheck test run chat chat-once rag rag-once ingest traces trace eval agent clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -141,6 +142,9 @@ trace: ## Show one trace and its spans (ID=<trace_id> PORT=8000); get an id from
 
 eval: ## Run the eval harness over the golden set (GOLDEN=… OUTPUT=… BASELINE=…); needs Ollama + `make ingest`
 	uv run python -m app.evals $(GOLDEN) $(if $(OUTPUT),--output $(OUTPUT)) $(if $(BASELINE),--baseline $(BASELINE))
+
+agent: ## Ask the ReAct agent a question (PROMPT="…" MAX_STEPS=…); needs Ollama + `make ingest`
+	uv run python -m app.agent "$(PROMPT)" $(if $(MAX_STEPS),--max-steps $(MAX_STEPS))
 
 clean: ## Remove caches
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

@@ -71,3 +71,21 @@ class TraceDetailModel(BaseModel):
     duration_ms: float
     created_at: float
     spans: list[SpanModel]
+
+
+class AgentRequest(BaseModel):
+    question: str = Field(min_length=1)
+    max_steps: int | None = Field(default=None, ge=1, le=20)
+
+
+class AgentStepModel(BaseModel):
+    thought: str
+    action: str
+    action_input: str
+    observation: str
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    steps: list[AgentStepModel]
+    stopped_reason: str

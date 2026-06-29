@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     judge_model: str | None = None  # falls back to `model` when unset
     eval_regression_threshold: float = 0.05
 
+    # Agent
+    agent_max_steps: int = 5
+
     # Logging
     log_level: str = "INFO"
 

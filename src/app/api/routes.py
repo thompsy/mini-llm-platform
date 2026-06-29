@@ -4,10 +4,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.agent.runner import run_agent
+from app.agent.tools import build_tools
 from app.config import Settings, get_settings
 from app.llm.client import OllamaClient, OllamaError
 from app.llm.embeddings import EmbeddingError, OllamaEmbedder
 from app.models import (
+    AgentRequest,
+    AgentResponse,
+    AgentStepModel,
     ChatMetrics,
     ChatRequest,
     ChatResponse,
@@ -199,4 +204,59 @@ async def get_trace(
             SpanModel(name=sp.name, duration_ms=sp.duration_ms, metadata=sp.metadata)
             for sp in trace.spans
         ],
+    )
+
+
+@router.post("/agent", response_model=AgentResponse)
+async def agent(
+    payload: AgentRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    embedder: Annotated[OllamaEmbedder, Depends(get_embedder)],
+    store: Annotated[ChromaStore, Depends(get_store)],
+    client: Annotated[OllamaClient, Depends(get_client)],
+) -> AgentResponse:
+    max_steps = payload.max_steps or settings.agent_max_steps
+    tools = build_tools(
+        embedder=embedder,
+        store=store,
+        chat_client=client,
+        embed_model=settings.embed_model,
+        chat_model=settings.model,
+        temperature=settings.default_temperature,
+        top_k=settings.rag_top_k,
+        min_score=settings.rag_min_score,
+    )
+    logger.debug(
+        "agent request: %d chars, max_steps=%d", len(payload.question), max_steps
+    )
+
+    try:
+        result = await run_agent(
+            payload.question,
+            chat_client=client,
+            model=settings.model,
+            tools=tools,
+            max_steps=max_steps,
+        )
+    except (OllamaError, EmbeddingError) as exc:
+        logger.warning("agent failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    logger.info(
+        "agent ok: %d step(s), stopped=%s", len(result.steps), result.stopped_reason
+    )
+    return AgentResponse(
+        answer=result.answer,
+        steps=[
+            AgentStepModel(
+                thought=s.thought,
+                action=s.action,
+                action_input=s.action_input,
+                observation=s.observation,
+            )
+            for s in result.steps
+        ],
+        stopped_reason=result.stopped_reason,
     )
