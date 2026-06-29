@@ -85,6 +85,23 @@ def _extract_thought(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _strip_quotes(text: str) -> str:
+    """Remove one pair of wrapping quotes, e.g. "'2 + 4'" -> "2 + 4".
+
+    Models commonly quote tool arguments as if calling a function. We only strip
+    when the quote appears exactly twice (the two ends), so inputs with internal
+    quotes are left untouched.
+    """
+    if (
+        len(text) >= 2
+        and text[0] == text[-1]
+        and text[0] in "'\"`"
+        and text.count(text[0]) == 2
+    ):
+        return text[1:-1]
+    return text
+
+
 def parse_step(text: str) -> AgentAction | FinalAnswer | None:
     """Parse a model reply into an action or a final answer; None if unparseable.
 
@@ -108,6 +125,6 @@ def parse_step(text: str) -> AgentAction | FinalAnswer | None:
         return AgentAction(
             thought=_extract_thought(text),
             tool=action.group(1).strip(),
-            tool_input=action_input.group(1).strip(),
+            tool_input=_strip_quotes(action_input.group(1).strip()),
         )
     return None
