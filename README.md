@@ -17,9 +17,11 @@ Ideas to extend this project and deepen understanding — roughly easiest to har
 
 > See [`concepts.md`](concepts.md) for running notes on the ideas behind this
 > project (embeddings, cosine similarity, and more),
-> [`reading.md`](reading.md) for books on designing these kinds of systems, and
+> [`reading.md`](reading.md) for books on designing these kinds of systems,
 > [`learning-roadmap.md`](learning-roadmap.md) for how the skills map to roles
-> (AI engineer, FDE, ML engineer, …).
+> (AI engineer, FDE, ML engineer, …), [`caching.md`](caching.md) for caching
+> design notes + a temperature experiment, and [`security.md`](security.md) for
+> access-control (RBAC/ABAC) design notes.
 
 ### Build your own models
 
